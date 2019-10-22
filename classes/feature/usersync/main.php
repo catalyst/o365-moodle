@@ -850,6 +850,28 @@ class main {
                  $where $usernamesql AND u.mnethostid = ? AND u.deleted = ?
               ORDER BY CONCAT(u.username, '~')"; // Sort john.smith@example.org before john.smith.
         $params = array_merge(['user'], $usernameparams, [$CFG->mnet_localhost_id, '0']);
+
+        // Later we find this username in moodle again, and see if they're linked.
+        // but we already matched that username in moodle to azure here.
+        // If we want to match azure usernames with moodle emails, instead of moodle usernames.
+        if ($aadsync['emailsync']) {
+            $sql = 'SELECT u.username,
+                       u.id as muserid,
+                       u.auth,
+                       tok.id as tokid,
+                       conn.id as existingconnectionid,
+                       assign.assigned assigned,
+                       assign.photoid photoid,
+                       assign.photoupdated photoupdated,
+                       obj.id AS objrecid
+                  FROM {user} u
+             LEFT JOIN {auth_oidc_token} tok ON tok.userid = u.id
+             LEFT JOIN {local_o365_connections} conn ON conn.muserid = u.id
+             LEFT JOIN {local_o365_appassign} assign ON assign.muserid = u.id
+             LEFT JOIN {local_o365_objects} obj ON obj.type = ? AND obj.moodleid = u.id
+                 WHERE u.email '.$usernamesql.' AND u.mnethostid = ? AND u.deleted = ?
+              ORDER BY CONCAT(u.username, \'~\')'; // Sort john.smith@example.org before john.smith.
+        }
         $existingusers = $DB->get_records_sql($sql, $params);
 
         // Fetch linked AAD user accounts.
