@@ -701,14 +701,12 @@ class main {
                        conn.id as existingconnectionid,
                        assign.assigned assigned,
                        assign.photoid photoid,
-                       assign.photoupdated photoupdated,
-                       obj.id AS objrecid
+                       assign.photoupdated photoupdated
                   FROM {user} u
              LEFT JOIN {auth_oidc_token} tok ON tok.userid = u.id
              LEFT JOIN {local_o365_connections} conn ON conn.muserid = u.id
              LEFT JOIN {local_o365_appassign} assign ON assign.muserid = u.id
-             LEFT JOIN {local_o365_objects} obj ON obj.type = ? AND obj.moodleid = u.id
-                 WHERE u.email '.$usernamesql.' AND u.mnethostid = ? AND u.deleted = ?
+                 WHERE u.email '.$usernamesql.'
               ORDER BY CONCAT(u.username, \'~\')'; // Sort john.smith@example.org before john.smith.
         }
         $existingusers = $DB->get_records_sql($sql, $params);
