@@ -928,7 +928,9 @@ class main {
         // but we already matched that username in moodle to azure here.
         // If we want to match azure usernames with moodle emails, instead of moodle usernames.
         if ($aadsync['emailsync']) {
-            $sql = 'SELECT u.username,
+            // Index the returned users array on the email field instead of the username field.
+            $sql = 'SELECT u.email,
+                       u.username,
                        u.id as muserid,
                        u.auth,
                        tok.id as tokid,
@@ -987,15 +989,43 @@ class main {
                 $userobjectid = $user['objectId'];
             }
 
-            // Process guest users.
-            $user['convertedupn'] = $user['upnlower'];
-            if (stripos($user['userPrincipalName'], '#EXT#') !== false) {
-                $user['convertedupn'] = strtolower($user['mail']);
+            if (isset($user['aad.isDeleted']) && $user['aad.isDeleted'] == '1') {
+                if (isset($aadsync['delete'])) {
+                    // Check for synced user.
+                    $sql = 'SELECT u.*
+                              FROM {user} u
+                              JOIN {local_o365_objects} obj ON obj.type = \'user\' AND obj.moodleid = u.id
+                              JOIN {auth_oidc_token} tok ON tok.userid = u.id
+                             WHERE u.username = ?
+                                   AND u.mnethostid = ?
+                                   AND u.deleted = ?
+                                   AND u.suspended = ?
+                                   AND u.auth = ?';
+                    $params = [
+                        trim(\core_text::strtolower($user['userPrincipalName'])),
+                        $CFG->mnet_localhost_id,
+                        '0',
+                        '0',
+                        'oidc',
+                        time()
+                    ];
+                    $synceduser = $DB->get_record_sql($sql, $params);
+                    if (!empty($synceduser)) {
+                        $synceduser->suspended = 1;
+                        user_update_user($synceduser, false);
+                        $this->mtrace($synceduser->username.' was marked deleted in Azure.');
+                    }
+                } else {
+                    $this->mtrace('User is deleted. Skipping.');
+                }
+                continue;
             }
 
-            if (!isset($existingusers[$user['upnlower']]) && !isset($existingusers[$user['upnsplit0']]) &&
-                !isset($existingusers[$user['convertedupn']])) {
-                $this->sync_new_user($aadsync, $user, isset($aadsync['guestsync']));
+            // Here we search through the array keys for our azure username
+            if (!isset($existingusers[$user['upnlower']]) && !isset($existingusers[$user['upnsplit0']])) {
+                if(!isset($user['aad.isDeleted'])) {
+                    $newmuser = $this->sync_new_user($aadsync, $user);
+                }
             } else {
                 $existinguser = null;
                 if (isset($existingusers[$user['upnlower']])) {
