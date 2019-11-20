@@ -692,7 +692,9 @@ class main {
         // but we already matched that username in moodle to azure here.
         // If we want to match azure usernames with moodle emails, instead of moodle usernames.
         if ($aadsync['emailsync']) {
-            $sql = 'SELECT u.username,
+            // Index the returned users array on the email field instead of the username field.
+            $sql = 'SELECT u.email,
+                       u.username,
                        u.id as muserid,
                        u.auth,
                        tok.id as tokid,
@@ -777,6 +779,7 @@ class main {
                 continue;
             }
 
+            // Here we search through the array keys for our azure username
             if (!isset($existingusers[$user['upnlower']]) && !isset($existingusers[$user['upnsplit0']])) {
                 $newmuser = $this->sync_new_user($aadsync, $user);
             } else {
