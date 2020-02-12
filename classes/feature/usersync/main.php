@@ -854,7 +854,7 @@ class main {
         // Later we find this username in moodle again, and see if they're linked.
         // but we already matched that username in moodle to azure here.
         // If we want to match azure usernames with moodle emails, instead of moodle usernames.
-        if ($aadsync['emailsync']) {
+        if (isset($aadsync['emailsync'])) {
             // Index the returned users array on the email field instead of the username field.
             $sql = 'SELECT u.email,
                        u.username,
