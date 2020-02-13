@@ -571,8 +571,18 @@ class coursegroups {
      * @return array $teacher_ids array containing ids of teachers.
      */
     public function get_teacher_ids_of_course($courseid) {
-        $roleteacher = $this->DB->get_record('role', array('shortname' => 'editingteacher'));
-        $rolenoneditingteacher = $this->DB->get_record('role', array('shortname' => 'teacher'));
+        $teacherrole = get_config('local_o365', 'rolemappingteacher');
+        if (!$teacherrole) {
+            // Fall back to the default role.
+            $teacherrole = 'teacher';
+        }
+        $editingteacherrole = get_config('local_o365', 'rolemappingeditingteacher');
+        if (!$editingteacherrole) {
+            // Fall back to the default role.
+            $teacherrole = 'editingteacher';
+        }
+        $roleteacher = $this->DB->get_record('role', array('shortname' => $editingteacherrole));
+        $rolenoneditingteacher = $this->DB->get_record('role', array('shortname' => $teacherrole));
         $context = \context_course::instance($courseid);
         $teachers = get_role_users($roleteacher->id, $context);
         $noneditingteachers = get_role_users($rolenoneditingteacher->id, $context);

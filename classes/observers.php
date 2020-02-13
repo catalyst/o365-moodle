@@ -632,8 +632,18 @@ class observers {
                     if (empty($userid) || empty($courseid)) {
                         \local_o365\utils::debug("handle_role_assigned no userid $userid or course $courseid", $caller);
                     } else {
-                        $roleteacher = $DB->get_record('role', array('shortname' => 'editingteacher'));
-                        $rolenoneditingteacher = $DB->get_record('role', array('shortname' => 'teacher'));
+                        $teacherrole = get_config('local_o365', 'rolemappingteacher');
+                        if (!$teacherrole) {
+                            // Fall back to the default role.
+                            $teacherrole = 'teacher';
+                        }
+                        $editingteacherrole = get_config('local_o365', 'rolemappingeditingteacher');
+                        if (!$editingteacherrole) {
+                            // Fall back to the default role.
+                            $teacherrole = 'editingteacher';
+                        }
+                        $roleteacher = $DB->get_record('role', array('shortname' => $editingteacherrole));
+                        $rolenoneditingteacher = $DB->get_record('role', array('shortname' => $teacherrole));
                         $apiclient = \local_o365\utils::get_api();
                         if (in_array($roleid, array($roleteacher->id, $rolenoneditingteacher->id))) {
                             $response = $apiclient->add_owner_to_course_group($courseid, $userid);
@@ -682,8 +692,18 @@ class observers {
                         \local_o365\utils::debug("handle_role_unassigned no userid $userid or course $courseid",
                             $caller);
                     } else {
-                        $roleteacher = $DB->get_record('role', array('shortname' => 'editingteacher'));
-                        $rolenoneditingteacher = $DB->get_record('role', array('shortname' => 'teacher'));
+                        $teacherrole = get_config('local_o365', 'rolemappingteacher');
+                        if (!$teacherrole) {
+                            // Fall back to the default role.
+                            $teacherrole = 'teacher';
+                        }
+                        $editingteacherrole = get_config('local_o365', 'rolemappingeditingteacher');
+                        if (!$editingteacherrole) {
+                            // Fall back to the default role.
+                            $teacherrole = 'editingteacher';
+                        }
+                        $roleteacher = $DB->get_record('role', array('shortname' => $editingteacherrole));
+                        $rolenoneditingteacher = $DB->get_record('role', array('shortname' => $teacherrole));
                         if (in_array($roleid, array($roleteacher->id, $rolenoneditingteacher->id))) {
                             $apiclient = \local_o365\utils::get_api();
                             $response = $apiclient->remove_owner_from_course_group($courseid, $userid);
