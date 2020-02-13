@@ -651,7 +651,6 @@ class coursegroups {
      */
     public function get_group_members($objectid) {
         $groupmembers = [];
-
         $memberrecords = $this->graphclient->get_group_members($objectid);
         foreach ($memberrecords['value'] as $memberrecord) {
             $groupmembers[$memberrecord['id']] = $memberrecord;
@@ -675,6 +674,29 @@ class coursegroups {
 
         return $groupmembers;
     }
+
+    public function get_teacher_ids_of_course($courseid) {
+        $teacherrole = get_config('local_o365', 'rolemappingteacher');
+        if (!$teacherrole) {
+            // Fall back to the default role.
+            $teacherrole = 'teacher';
+        }
+        $editingteacherrole = get_config('local_o365', 'rolemappingeditingteacher');
+        if (!$editingteacherrole) {
+            // Fall back to the default role.
+            $teacherrole = 'editingteacher';
+        }
+        $roleteacher = $this->DB->get_record('role', array('shortname' => $editingteacherrole));
+        $rolenoneditingteacher = $this->DB->get_record('role', array('shortname' => $teacherrole));
+        $context = \context_course::instance($courseid);
+        $allteachers = get_users_by_capability($context, 'local/o365:teamowner', 'u.id');
+        $teacherids = array();
+        foreach ($allteachers as $teacher) {
+            array_push($teacherids, $teacher->id);
+        }
+        return $teacherids;
+    }
+
 
     /**
      * Helper function to retrieve users who have Team owner capability in the course with the given ID.

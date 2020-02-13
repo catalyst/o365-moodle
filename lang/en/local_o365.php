@@ -310,6 +310,18 @@ $string['settings_secthead_legacy'] = 'Legacy';
 $string['settings_secthead_legacy_desc'] = 'These settings and features are deprecated and likely to be removed soon.';
 $string['settings_secthead_preview'] = 'Preview Features';
 $string['settings_secthead_preview_desc'] = '';
+$string['settings_secthead_coursesync'] = 'Teams Sync';
+$string['settings_secthead_coursesync_desc'] = 'These following settings control course synchronization between Microsoft Teams and Moodle.';
+$string['settings_secthead_rolemapping'] = 'Role mapping';
+$string['settings_secthead_rolemapping_desc'] = 'Map custom roles to their equivalent in o365';
+$string['settings_rolemapping'] = 'Role mapping';
+$string['settings_rolemapping_details'] = 'Role mapping';
+$string['rolemappingteacher'] = 'Role for teacher';
+$string['rolemappingteacherdesc'] = 'This role will be the equivalent of a teacher in o365';
+$string['rolemappingeditingteacher'] = 'Role for editingteacher';
+$string['rolemappingeditingteacherdesc'] = 'This role will be the equivalent of an editingteacher in o365';
+$string['settings_options_usersync'] = 'User Sync';
+$string['settings_options_usersync_desc'] = 'The following settings control user synchronization between Office 365 and Moodle.';
 
 // Settings in the "Tools" section of the "Advanced" tab.
 $string['settings_tools_tenants'] = 'Tenants';

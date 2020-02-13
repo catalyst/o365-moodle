@@ -316,6 +316,62 @@ class observers {
                 }
             }
 
+            $idtoken = \auth_oidc\jwt::instance_from_encoded($o365user->get_idtoken());
+
+            $userdata = [];
+
+            if (\local_o365\feature\usersync\main::fieldmap_require_graph_api_call($eventtype)) {
+                $apiclient = \local_o365\utils::get_api($userid);
+                $userdata = $apiclient->get_user($o365user->objectid);
+                // Azuread users objectid, unified uses id.
+                if (\local_o365\rest\unified::is_configured() && empty($userdata['objectId']) && !empty($userdata['id'])) {
+                    $userdata['objectId'] = $userdata['id'];
+                }
+            } else {
+                // Extract basic information from the IDToken.
+                $oid = $idtoken->claim('oid');
+                if (!empty($oid)) {
+                    $userdata['objectId'] = $oid;
+                }
+
+                $upn = $idtoken->claim('upn');
+                if (!empty($upn)) {
+                    $userdata['userPrincipalName'] = $upn;
+                }
+
+                $firstname = $idtoken->claim('given_name');
+                if (!empty($firstname)) {
+                    $userdata['givenName'] = $firstname;
+                }
+
+                $lastname = $idtoken->claim('family_name');
+                if (!empty($lastname)) {
+                    $userdata['surname'] = $lastname;
+                }
+
+                $email = $idtoken->claim('email');
+                if (!empty($email)) {
+                    $userdata['mail'] = $email;
+                } else {
+                    if (!empty($upn)) {
+                        $aademailvalidateresult = filter_var($upn, FILTER_VALIDATE_EMAIL);
+                        if (!empty($aademailvalidateresult)) {
+                            $userdata['mail'] = $aademailvalidateresult;
+                        }
+                    }
+                }
+            }
+
+            // Then apply the custom field map.
+            $updateduser = \local_o365\feature\usersync\main::apply_configured_fieldmap($userdata, new \stdClass(), $eventtype);
+
+            // Save profile data.
+            if (!empty($updateduser)) {
+                $updateduser->id = $userid;
+                $DB->update_record('user', $updateduser);
+                profile_save_data($updateduser);
+            }
+
             $userobject = $DB->get_record('local_o365_objects', ['type' => 'user', 'moodleid' => $userid]);
             if (empty($userobject)) {
                 // Create userobject if it does not exist.
@@ -740,6 +796,18 @@ class observers {
                     if (empty($userid) || empty($courseid)) {
                         \local_o365\utils::debug("handle_role_assigned no userid $userid or course $courseid", $caller);
                     } else {
+                        $teacherrole = get_config('local_o365', 'rolemappingteacher');
+                        if (!$teacherrole) {
+                            // Fall back to the default role.
+                            $teacherrole = 'teacher';
+                        }
+                        $editingteacherrole = get_config('local_o365', 'rolemappingeditingteacher');
+                        if (!$editingteacherrole) {
+                            // Fall back to the default role.
+                            $teacherrole = 'editingteacher';
+                        }
+                        $roleteacher = $DB->get_record('role', array('shortname' => $editingteacherrole));
+                        $rolenoneditingteacher = $DB->get_record('role', array('shortname' => $teacherrole));
                         $apiclient = \local_o365\utils::get_api();
                         $context = \context_course::instance($courseid);
                         $roles = get_roles_with_capability('local/o365:teamowner', CAP_ALLOW, $context);
@@ -795,20 +863,23 @@ class observers {
                         \local_o365\utils::debug("handle_role_unassigned no userid $userid or course $courseid",
                             $caller);
                     } else {
-                        $context = \context_course::instance($courseid);
-                        $roles = get_roles_with_capability('local/o365:teamowner', CAP_ALLOW, $context);
-                        if (!empty($roles)) {
-                            $roles = array_keys($roles);
-                            $userroles = get_user_roles($context, $userid, false);
-                            $userroleids = array_column($userroles, 'roleid');
-                            unset($userroleids[$roleid]);
-
-                            if (empty(array_intersect($roles, $userroleids))) {
-                                $apiclient = \local_o365\utils::get_api();
-                                $response = $apiclient->remove_owner_from_course_group($courseid, $userid);
-                                // add the user back to the group as member
-                                $apiclient->add_user_to_course_group($courseid, $userid);
-                            }
+                        $teacherrole = get_config('local_o365', 'rolemappingteacher');
+                        if (!$teacherrole) {
+                            // Fall back to the default role.
+                            $teacherrole = 'teacher';
+                        }
+                        $editingteacherrole = get_config('local_o365', 'rolemappingeditingteacher');
+                        if (!$editingteacherrole) {
+                            // Fall back to the default role.
+                            $teacherrole = 'editingteacher';
+                        }
+                        $roleteacher = $DB->get_record('role', array('shortname' => $editingteacherrole));
+                        $rolenoneditingteacher = $DB->get_record('role', array('shortname' => $teacherrole));
+                        if (in_array($roleid, array($roleteacher->id, $rolenoneditingteacher->id))) {
+                            $apiclient = \local_o365\utils::get_api();
+                            $response = $apiclient->remove_owner_from_course_group($courseid, $userid);
+                            // add the user back to the group as member
+                            $apiclient->add_user_to_course_group($courseid, $userid);
                         }
                     }
                 }

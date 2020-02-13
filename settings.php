@@ -426,6 +426,27 @@ if ($hassiteconfig) {
         $label = new lang_string('settings_previewfeatures', 'local_o365');
         $desc = new lang_string('settings_previewfeatures_details', 'local_o365');
         $settings->add(new \admin_setting_configcheckbox('local_o365/enablepreview', $label, $desc, '0'));
+
+        // Role Mapping
+        $label = new lang_string('settings_secthead_rolemapping', 'local_o365');
+        $desc = new lang_string('settings_secthead_rolemapping_desc', 'local_o365');
+        $settings->add(new admin_setting_heading('local_o365_section_rolemapping', $label, $desc));
+
+        $label = new lang_string('settings_rolemapping', 'local_o365');
+        $desc = new lang_string('settings_rolemapping_details', 'local_o365');
+        $rolenames = $DB->get_records('role', null, '', 'shortname');
+        $options = ['teacher' => 'teacher', 'editingteacher' => 'editingteacher'];
+        foreach ($rolenames as $rolename) {
+            $options[$rolename->shortname] = $rolename->shortname;
+        }
+        $settings->add(new admin_setting_configselect('local_o365/rolemappingteacher',
+                                                      new lang_string('rolemappingteacher',          'local_o365'),
+                                                      new lang_string('rolemappingteacherdesc',      'local_o365'),
+                                                      'teacher', $options));
+        $settings->add(new admin_setting_configselect('local_o365/rolemappingeditingteacher',
+                                                      new lang_string('rolemappingeditingteacher',          'local_o365'),
+                                                      new lang_string('rolemappingeditingteacherdesc',      'local_o365'),
+                                                      'editingteacher', $options));
     }
 
     if ($tab == LOCAL_O365_TAB_SDS || !empty($install)) {
