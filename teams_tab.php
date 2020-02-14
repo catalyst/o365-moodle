@@ -27,7 +27,8 @@ require_once(__DIR__ . '/../../config.php');
 
 // Force theme.
 if (get_config('theme_boost_o365teams', 'version')) {
-    $SESSION->theme = 'boost_o365teams';
+    //$SESSION->theme = 'boost_o365teams';
+    $SESSION->theme = 'cqu2020';
 }
 
 echo "<link rel=\"stylesheet\" type=\"text/css\" href=\"styles.css\">";
