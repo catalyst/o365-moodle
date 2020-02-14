@@ -30,11 +30,13 @@ $url = new moodle_url('/local/o365/teams_tab_configuration.php');
 $PAGE->set_context(context_system::instance());
 
 // Force a theme without navigation and block.
-$customtheme = get_config('local_o365', 'customtheme');
-if (!empty($customtheme) && get_config('theme_' . $customtheme, 'version')) {
-    $SESSION->theme = $customtheme;
-} else if (get_config('theme_boost_o365teams', 'version')) {
-    $SESSION->theme = 'boost_o365teams';
+if (get_config('theme_boost_o365teams', 'version')) {
+    $customtheme = get_config('local_o365', 'customtheme');
+    if (!$customtheme) {
+        $SESSION->theme = 'boost_o365teams';
+    } else {
+        $SESSION->theme = $customtheme;
+    }
 }
 
 echo "<link rel=\"stylesheet\" type=\"text/css\" href=\"styles.css\">";

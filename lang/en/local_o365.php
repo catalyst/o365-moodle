@@ -286,6 +286,8 @@ $string['settings_secthead_advanced'] = 'Advanced Settings';
 $string['settings_secthead_advanced_desc'] = 'These settings control other features of the plugin suite. Be careful! These may cause unintended effects.';
 $string['settings_secthead_legacy'] = 'Legacy';
 $string['settings_secthead_legacy_desc'] = 'These settings and features are deprecated and likely to be removed soon.';
+$string['customtheme'] = 'Custom theme';
+$string['customthemedesc'] = 'Choose a custom theme to use in the teams tab instead of boost_o365teams';
 
 // Settings in the "Tools" section of the "Advanced" tab.
 $string['settings_tools_tenants'] = 'Tenants';
