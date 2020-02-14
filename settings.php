@@ -307,19 +307,28 @@ if ($hassiteconfig) {
 
         $label = new lang_string('settings_rolemapping', 'local_o365');
         $desc = new lang_string('settings_rolemapping_details', 'local_o365');
-        $rolenames = $DB->get_records('role', null, '', 'shortname');
-        $options = ['teacher' => 'teacher', 'editingteacher' => 'editingteacher'];
+        $rolenames = $DB->get_records('role', null, 'id ASC', 'id, shortname');
+
+        $rolesarray = [];
+        $default = [];
         foreach ($rolenames as $rolename) {
-            $options[$rolename->shortname] = $rolename->shortname;
+            $rolesarray[$rolename->id] = $rolename->shortname;
+            $default[] = 0;
         }
-        $settings->add(new admin_setting_configselect('local_o365/rolemappingteacher',
-                                                      new lang_string('rolemappingteacher',          'local_o365'),
-                                                      new lang_string('rolemappingteacherdesc',      'local_o365'),
-                                                      'teacher', $options));
-        $settings->add(new admin_setting_configselect('local_o365/rolemappingeditingteacher',
-                                                      new lang_string('rolemappingeditingteacher',          'local_o365'),
-                                                      new lang_string('rolemappingeditingteacherdesc',      'local_o365'),
-                                                      'editingteacher', $options));
+        $settings->add(new admin_setting_configmulticheckbox(
+                           'local_o365/rolemappingteacher',
+                           new lang_string('rolemappingteacher', 'local_o365'),
+                           new lang_string('rolemappingteacherdesc', 'local_o365'),
+                           $default,
+                           $rolesarray
+                       ));
+        $settings->add(new admin_setting_configmulticheckbox(
+                           'local_o365/rolemappingeditingteacher',
+                           new lang_string('rolemappingeditingteacher', 'local_o365'),
+                           new lang_string('rolemappingeditingteacherdesc', 'local_o365'),
+                           $default,
+                           $rolesarray
+                       ));
     }
 
     if ($tab == LOCAL_O365_TAB_SDS || !empty($install)) {
