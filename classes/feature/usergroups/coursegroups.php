@@ -677,19 +677,25 @@ class coursegroups {
 
     public function get_teacher_ids_of_course($courseid) {
         $teacherrole = get_config('local_o365', 'rolemappingteacher');
-        if (!$teacherrole) {
+        if (!$teacherrole || $teacherrole == 'teacher') {
             // Fall back to the default role.
             $teacherrole = 'teacher';
+            $rolenoneditingteacher = $this->DB->get_record('role', array('shortname' => $teacherrole))->id;
+        } else {
+            $rolenoneditingteacher = explode(',', $teacherrole);
         }
         $editingteacherrole = get_config('local_o365', 'rolemappingeditingteacher');
-        if (!$editingteacherrole) {
+        if (!$editingteacherrole || $editingteacherrole == 'editingteacher') {
             // Fall back to the default role.
-            $teacherrole = 'editingteacher';
+            $editingteacherrole = 'editingteacher';
+            $roleteacher = $this->DB->get_record('role', array('shortname' => $editingteacherrole))->id;
+        } else {
+            $roleteacher = explode(',', $editingteacherrole);
         }
-        $roleteacher = $this->DB->get_record('role', array('shortname' => $editingteacherrole));
-        $rolenoneditingteacher = $this->DB->get_record('role', array('shortname' => $teacherrole));
         $context = \context_course::instance($courseid);
-        $allteachers = get_users_by_capability($context, 'local/o365:teamowner', 'u.id');
+        $teachers = get_role_users($roleteacher, $context, false, 'ra.id, u.id, u.lastname, u.firstname');
+        $noneditingteachers = get_role_users($rolenoneditingteacher, $context, false, 'ra.id, u.id, u.lastname, u.firstname');
+        $allteachers = array_merge($teachers, $noneditingteachers);
         $teacherids = array();
         foreach ($allteachers as $teacher) {
             array_push($teacherids, $teacher->id);
