@@ -684,7 +684,7 @@ class main {
              LEFT JOIN {local_o365_connections} conn ON conn.muserid = u.id
              LEFT JOIN {local_o365_appassign} assign ON assign.muserid = u.id
              LEFT JOIN {local_o365_objects} obj ON obj.type = ? AND obj.moodleid = u.id
-                 WHERE u.username '.$usernamesql.' AND u.mnethostid = ? AND u.deleted = ?
+                 WHERE LOWER(u.username) '.$usernamesql.' AND u.mnethostid = ? AND u.deleted = ?
               ORDER BY CONCAT(u.username, \'~\')'; // Sort john.smith@example.org before john.smith.
         $params = array_merge(['user'], $usernameparams, [$CFG->mnet_localhost_id, '0']);
 
@@ -708,7 +708,7 @@ class main {
              LEFT JOIN {local_o365_connections} conn ON conn.muserid = u.id
              LEFT JOIN {local_o365_appassign} assign ON assign.muserid = u.id
              LEFT JOIN {local_o365_objects} obj ON obj.type = ? AND obj.moodleid = u.id
-                 WHERE u.email '.$usernamesql.' AND u.mnethostid = ? AND u.deleted = ?
+                 WHERE LOWER(u.email) '.$usernamesql.' AND u.mnethostid = ? AND u.deleted = ?
               ORDER BY CONCAT(u.username, \'~\')'; // Sort john.smith@example.org before john.smith.
         }
         $existingusers = $DB->get_records_sql($sql, $params);
