@@ -929,7 +929,7 @@ class main {
         // If we want to match azure usernames with moodle emails, instead of moodle usernames.
         if (isset($aadsync['emailsync'])) {
             // Index the returned users array on the email field instead of the username field.
-            $sql = 'SELECT u.email,
+            $sql = 'SELECT LOWER(u.email),
                        u.username,
                        u.id as muserid,
                        u.auth,
