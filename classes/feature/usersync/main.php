@@ -976,6 +976,8 @@ class main {
         foreach ($aadusers as $i => $user) {
             if (!isset($user['userPrincipalName'])) {
                 // User doesn't have userPrincipalName, should be deleted users.
+                $userid = (\local_o365\rest\unified::is_configured() ? $user['id'] : $userobjectid = $user['objectId']);
+                $this->mtrace('Azure AD user missing UPN (' . $userid . '); skipping...');
                 unset($aadusers[$i]);
                 continue;
             }
