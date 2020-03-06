@@ -810,6 +810,12 @@ class main {
         $usernames = [];
         $upns = [];
         foreach ($aadusers as $i => $user) {
+           if (empty($user['userPrincipalName'])) {
+                    $userid = (\local_o365\rest\unified::is_configured() ? $user['id'] : $userobjectid = $user['objectId']);
+                    $this->mtrace('Azure AD user missing UPN (' . $userid . '); skipping...');
+                    continue;
+           }
+
             $upnlower = \core_text::strtolower($user['userPrincipalName']);
             $aadusers[$i]['upnlower'] = $upnlower;
 
@@ -902,11 +908,6 @@ class main {
 
         foreach ($aadusers as $user) {
             $this->mtrace(' ');
-
-            if (empty($user['upnlower'])) {
-                $this->mtrace('Azure AD user missing UPN (' . $user['objectId'] . '); skipping...');
-                continue;
-            }
 
             $this->mtrace('Syncing user '.$user['upnlower']);
 
