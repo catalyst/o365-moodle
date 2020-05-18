@@ -286,10 +286,9 @@ if ($hassiteconfig) {
             $name = $theme->name;
             $options[$name] = $name;
         }
-        $settings->add(new admin_setting_configselect('local_o365/customtheme',
-                                                      new lang_string('customtheme',          'local_o365'),
-                                                      new lang_string('customthemedesc',      'local_o365'),
-                                                      'boost_o365teams', $options));
+        $label = new lang_string('customtheme', 'local_o365');
+        $desc = new lang_string('customthemedesc', 'local_o365');
+        $settings->add(new admin_setting_configselect('local_o365/customtheme', $label, $desc, 'boost_o365teams', $options));
 
         // Legacy settings.
         $label = new lang_string('settings_secthead_legacy', 'local_o365');
