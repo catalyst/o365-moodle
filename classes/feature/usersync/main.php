@@ -669,7 +669,7 @@ class main {
             }
         }
 
-        if ($aadsync['emailsync']) {
+        if (isset($aadsync['emailsync'])) {
             $select = 'SELECT u.email,
                        u.username,';
             $where = ' WHERE LOWER(u.email)';
