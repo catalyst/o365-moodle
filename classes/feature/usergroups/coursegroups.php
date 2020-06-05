@@ -502,9 +502,26 @@ class coursegroups {
             $currentowners[] = $owner['id'];
         }
 
-        // Get intended group members.
-        $intendedteamownerids = static::get_team_owner_ids_by_course_id($courseid);
-        $intendedteammemberuserids = $this->get_team_member_ids_by_course_id($courseid);
+        // Get list of users enrolled in the course. These are our intended group members.
+        $intendedmembers = [];
+        $coursecontext = \context_course::instance($courseid);
+        // Only get non suspended students here.
+        $this->mtrace('Getting active students only to sync to team..');
+        list($esql, $params) = get_enrolled_sql($coursecontext, '', 0, true);
+        $sql = "SELECT u.id,
+                       objs.objectid as userobjectid
+                  FROM {user} u
+                  JOIN ($esql) je ON je.id = u.id
+                  JOIN {local_o365_objects} objs ON objs.moodleid = u.id
+                  JOIN {user_enrolments} ue ON ue.userid = u.id
+                 WHERE u.deleted = 0 AND objs.type = :user AND ue.status <> :suspended";
+        $params['user'] = 'user';
+        $params['suspended'] = ENROL_USER_SUSPENDED;
+        $enrolled = $this->DB->get_recordset_sql($sql, $params);
+        foreach ($enrolled as $user) {
+            $intendedmembers[$user->userobjectid] = $user->id;
+        }
+        $enrolled->close();
 
         $intendedteamowners = \local_o365\feature\usergroups\utils::get_user_object_ids_by_user_ids($intendedteamownerids);
         $intendedteammembers = \local_o365\feature\usergroups\utils::get_user_object_ids_by_user_ids($intendedteammemberuserids);
