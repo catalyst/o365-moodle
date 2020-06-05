@@ -500,8 +500,9 @@ class coursegroups {
                   JOIN ($esql) je ON je.id = u.id
                   JOIN {local_o365_objects} objs ON objs.moodleid = u.id
                   JOIN {user_enrolments} ue ON ue.userid = u.id
-                 WHERE u.deleted = 0 AND objs.type = :user";
+                 WHERE u.deleted = 0 AND objs.type = :user AND ue.status <> :suspended";
         $params['user'] = 'user';
+        $params['suspended'] = ENROL_USER_SUSPENDED;
         $enrolled = $this->DB->get_recordset_sql($sql, $params);
         foreach ($enrolled as $user) {
             $intendedmembers[$user->userobjectid] = $user->id;
