@@ -98,6 +98,9 @@ class coursegroups {
             if (is_array($metadata) && !empty($metadata['softdelete'])) {
                 $this->mtrace('Attempting to restore group for course #'.$objectrec->courseid);
                 $result = $this->restore_group($objectrec->id, $objectrec->objectid, $metadata);
+                // When restoring, check the group members again.
+                $this->mtrace('Catalyst change - Resyncing group members for course #'.$objectrec->courseid);
+                $this->resync_group_membership($objectrec->courseid);
                 if ($result === true) {
                     $this->mtrace('....success!');
                 } else {
@@ -211,6 +214,8 @@ class coursegroups {
                 if ($hasowner) {
                     try {
                         $this->create_team($course->id, $groupobjectrec->objectid, $appid);
+                        $this->mtrace('Catalyst change - Resync group membership when creating team. Course #' . $course->id);
+                        $this->resync_group_membership($course->id);
                     } catch (\Exception $e) {
                         $this->mtrace('Could not create team for course #' . $course->id . '. Reason: ' . $e->getMessage());
                     }
