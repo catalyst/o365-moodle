@@ -493,7 +493,7 @@ class coursegroups {
         // Get list of users enrolled in the course. These are our intended group members.
         $intendedmembers = [];
         $coursecontext = \context_course::instance($courseid);
-        // Only get non suspended students here.
+        // Only get suspended students here.
         $this->mtrace('Getting active students only to sync to team..');
         list($esql, $params) = get_enrolled_sql($coursecontext, '', 0, true);
         $sql = "SELECT u.id,
@@ -502,15 +502,15 @@ class coursegroups {
                   JOIN ($esql) je ON je.id = u.id
                   JOIN {local_o365_objects} objs ON objs.moodleid = u.id
                   JOIN {user_enrolments} ue ON ue.userid = u.id
-                 WHERE u.deleted = 0 AND objs.type = :user AND ue.status <> :suspended";
+                 WHERE u.deleted = 0 AND objs.type = :user";
         $params['user'] = 'user';
-        $params['suspended'] = ENROL_USER_SUSPENDED;
         $enrolled = $this->DB->get_recordset_sql($sql, $params);
         foreach ($enrolled as $user) {
             $intendedmembers[$user->userobjectid] = $user->id;
         }
         $enrolled->close();
 
+        $this->mtrace('This is the subquery: ' . $esql);
         if (!empty($currentmembers)) {
             // Diff current and intended members in each direction to determine toadd and toremove lists.
             $toadd = array_diff_key($intendedmembers, $currentmembers);
