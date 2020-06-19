@@ -638,12 +638,15 @@ class coursegroups {
             $roleteacher = explode(',', $editingteacherrole);
         }
         $context = \context_course::instance($courseid);
-        $teachers = get_role_users($roleteacher, $context, false, 'ra.id, u.id, u.lastname, u.firstname');
-        $noneditingteachers = get_role_users($rolenoneditingteacher, $context, false, 'ra.id, u.id, u.lastname, u.firstname');
+        $teachers = get_role_users($roleteacher, $context, false, 'ra.id, u.id AS userid, u.lastname, u.firstname');
+        $noneditingteachers = get_role_users($rolenoneditingteacher, $context, false, 'ra.id, u.id AS userid, u.lastname, u.firstname');
         $allteachers = array_merge($teachers, $noneditingteachers);
         $teacherids = array();
         foreach ($allteachers as $teacher) {
-            array_push($teacherids, $teacher->id);
+            // A user can have multiple roles. Need to make sure they're only added to our teacherids array once.
+            if (!in_array($teacher->userid, $teacherids)) {
+                array_push($teacherids, $teacher->userid);
+            }
         }
         return $teacherids;
     }
