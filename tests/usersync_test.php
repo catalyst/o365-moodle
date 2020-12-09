@@ -101,7 +101,7 @@ class local_o365_usersync_testcase extends \advanced_testcase {
             'userPrincipalName' => 'testuser'.$i.'@example.onmicrosoft.com',
             'mail' => 'testuser'.$i.'@example.onmicrosoft.com',
             'surname' => 'User'.$i,
-            'preferredLanguage' => ($i == 3) ? 'sa-IN' : 'en-US',
+            'preferredLanguage' => 'en-US',
         ];
     }
 
@@ -324,7 +324,7 @@ class local_o365_usersync_testcase extends \advanced_testcase {
      */
     public function test_sync_users_delete() {
         global $CFG, $DB;
-        set_config('aadsync', 'create,delete', 'local_o365');
+        set_config('aadsync', 'create,delete,update', 'local_o365');
 
         $response = [
             'value' => [

@@ -214,6 +214,7 @@ class local_o365_coursegroups_testcase extends \advanced_testcase {
         $expecteduseragent = 'Moodle-groups-'.$pluginversion;
 
         $requests = $httpclient->get_requests();
+        $requests = array_values(array_unique($requests, SORT_REGULAR));
         $expectedrequests = [
             // List request.
             [
@@ -233,7 +234,14 @@ class local_o365_coursegroups_testcase extends \advanced_testcase {
                     'CURLOPT_USERAGENT' => $expecteduseragent,
                 ],
             ],
-
+            // Get group.
+            [
+                'url' => 'https://graph.microsoft.com/v1.0/groups/testgroupobjectid',
+                'options' => [
+                    'CURLOPT_HTTPGET' => '1',
+                    'CURLOPT_USERAGENT' => $expecteduseragent,
+                ],
+            ],
             // Add request.
             [
                 'url' => 'https://graph.microsoft.com/beta/groups/testgroupobjectid/members/$ref',

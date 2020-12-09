@@ -232,6 +232,9 @@ abstract class o365api {
         }
 
         $result = $this->httpclient->$httpmethod($requesturi, $params, $options);
+        if(!isset($this->httpclient->info)) {
+            return $result;
+        }
         if ($this->httpclient->info['http_code'] == 429) {
             // We are being throttled.
             $ratelimitlevel++;
