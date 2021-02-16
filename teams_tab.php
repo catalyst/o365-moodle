@@ -26,11 +26,13 @@
 require_once(__DIR__ . '/../../config.php');
 
 // Force theme.
-$customtheme = get_config('local_o365', 'customtheme');
-if (!empty($customtheme) && get_config('theme_'.$customtheme, 'version')) {
-    $SESSION->theme = $customtheme;
-} else if (get_config('theme_boost_o365teams', 'version')) {
-    $SESSION->theme = 'boost_o365teams';
+if (get_config('theme_boost_o365teams', 'version')) {
+    $customtheme = get_config('local_o365', 'customtheme');
+    if (!$customtheme) {
+        $SESSION->theme = 'boost_o365teams';
+    } else {
+        $SESSION->theme = $customtheme;
+    }
 }
 
 echo "<link rel=\"stylesheet\" type=\"text/css\" href=\"styles.css\">";
@@ -93,7 +95,7 @@ function ssoLogin() {
     microsoftTeams.authentication.getAuthToken({
         successCallback: (result) => {
             const url = '" . $ssologinurl->out() . "';
-            
+
             return fetch(url, {
                 method: 'POST',
                 headers: {
@@ -133,7 +135,7 @@ function inIframe () {
  * If a visitor visits teams web site from mobile browser, Teams will tell the visitor to download mobile app and prevent access
  * by default.
  * However, if the visitor enables 'mobile mode' or equivalent, the message can be bypassed, thus this check may fail.
- */  
+ */
 function isMobileApp() {
     if(/Android|iPhone|iPad|iPod/i.test(navigator.userAgent)) {
         return true;

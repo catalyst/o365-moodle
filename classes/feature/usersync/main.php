@@ -810,6 +810,12 @@ class main {
         $usernames = [];
         $upns = [];
         foreach ($aadusers as $i => $user) {
+           if (empty($user['userPrincipalName'])) {
+                    $userid = (\local_o365\rest\unified::is_configured() ? $user['id'] : $userobjectid = $user['objectId']);
+                    $this->mtrace('Azure AD user missing UPN (' . $userid . '); skipping...');
+                    continue;
+           }
+
             $upnlower = \core_text::strtolower($user['userPrincipalName']);
             $aadusers[$i]['upnlower'] = $upnlower;
 
@@ -850,6 +856,30 @@ class main {
                  $where $usernamesql AND u.mnethostid = ? AND u.deleted = ?
               ORDER BY CONCAT(u.username, '~')"; // Sort john.smith@example.org before john.smith.
         $params = array_merge(['user'], $usernameparams, [$CFG->mnet_localhost_id, '0']);
+
+        // Later we find this username in moodle again, and see if they're linked.
+        // but we already matched that username in moodle to azure here.
+        // If we want to match azure usernames with moodle emails, instead of moodle usernames.
+        if (isset($aadsync['emailsync'])) {
+            // Index the returned users array on the email field instead of the username field.
+            $sql = 'SELECT LOWER(u.email),
+                       u.username,
+                       u.id as muserid,
+                       u.auth,
+                       tok.id as tokid,
+                       conn.id as existingconnectionid,
+                       assign.assigned assigned,
+                       assign.photoid photoid,
+                       assign.photoupdated photoupdated,
+                       obj.id AS objrecid
+                  FROM {user} u
+             LEFT JOIN {auth_oidc_token} tok ON tok.userid = u.id
+             LEFT JOIN {local_o365_connections} conn ON conn.muserid = u.id
+             LEFT JOIN {local_o365_appassign} assign ON assign.muserid = u.id
+             LEFT JOIN {local_o365_objects} obj ON obj.type = ? AND obj.moodleid = u.id
+                 WHERE LOWER(u.email) '.$usernamesql.' AND u.mnethostid = ? AND u.deleted = ?
+              ORDER BY CONCAT(u.username, \'~\')'; // Sort john.smith@example.org before john.smith.
+        }
         $existingusers = $DB->get_records_sql($sql, $params);
 
         // Fetch linked AAD user accounts.
@@ -870,7 +900,7 @@ class main {
              LEFT JOIN {local_o365_connections} conn ON conn.muserid = u.id
              LEFT JOIN {local_o365_appassign} assign ON assign.muserid = u.id
              LEFT JOIN {local_o365_objects} obj ON obj.type = ? AND obj.moodleid = u.id
-                 WHERE tok.oidcusername '.$upnsql.' AND u.username '.$usernamesql.' AND u.mnethostid = ? AND u.deleted = ? ';
+                 WHERE tok.oidcusername '.$upnsql.' AND LOWER(u.username) '.$usernamesql.' AND u.mnethostid = ? AND u.deleted = ? ';
         $params = array_merge(['user'], $upnparams, $usernameparams, [$CFG->mnet_localhost_id, '0']);
         $linkedexistingusers = $DB->get_records_sql($sql, $params);
 
@@ -878,11 +908,6 @@ class main {
 
         foreach ($aadusers as $user) {
             $this->mtrace(' ');
-
-            if (empty($user['upnlower'])) {
-                $this->mtrace('Azure AD user missing UPN (' . $user['objectId'] . '); skipping...');
-                continue;
-            }
 
             $this->mtrace('Syncing user '.$user['upnlower']);
 
@@ -892,6 +917,39 @@ class main {
                 $userobjectid = $user['objectId'];
             }
 
+            if (isset($user['aad.isDeleted']) && $user['aad.isDeleted'] == '1') {
+                if (isset($aadsync['delete'])) {
+                    // Check for synced user.
+                    $sql = 'SELECT u.*
+                              FROM {user} u
+                              JOIN {local_o365_objects} obj ON obj.type = \'user\' AND obj.moodleid = u.id
+                              JOIN {auth_oidc_token} tok ON tok.userid = u.id
+                             WHERE u.username = ?
+                                   AND u.mnethostid = ?
+                                   AND u.deleted = ?
+                                   AND u.suspended = ?
+                                   AND u.auth = ?';
+                    $params = [
+                        trim(\core_text::strtolower($user['userPrincipalName'])),
+                        $CFG->mnet_localhost_id,
+                        '0',
+                        '0',
+                        'oidc',
+                        time()
+                    ];
+                    $synceduser = $DB->get_record_sql($sql, $params);
+                    if (!empty($synceduser)) {
+                        $synceduser->suspended = 1;
+                        user_update_user($synceduser, false);
+                        $this->mtrace($synceduser->username.' was marked deleted in Azure.');
+                    }
+                } else {
+                    $this->mtrace('User is deleted. Skipping.');
+                }
+                continue;
+            }
+
+            // Here we search through the array keys for our azure username
             if (!isset($existingusers[$user['upnlower']]) && !isset($existingusers[$user['upnsplit0']])) {
                 if(!isset($user['aad.isDeleted'])) {
                     $newmuser = $this->sync_new_user($aadsync, $user);

@@ -211,6 +211,8 @@ class coursegroups {
                 if ($hasowner) {
                     try {
                         $this->create_team($course->id, $groupobjectrec->objectid, $appid);
+                        $this->mtrace('Catalyst change - Resync group membership when creating team. Course #' . $course->id);
+                        $this->resync_group_membership($course->id);
                     } catch (\Exception $e) {
                         $this->mtrace('Could not create team for course #' . $course->id . '. Reason: ' . $e->getMessage());
                     }
@@ -491,7 +493,7 @@ class coursegroups {
         // Get list of users enrolled in the course. These are our intended group members.
         $intendedmembers = [];
         $coursecontext = \context_course::instance($courseid);
-        // Only get non suspended students here.
+        // Only get suspended students here.
         $this->mtrace('Getting active students only to sync to team..');
         list($esql, $params) = get_enrolled_sql($coursecontext, '', 0, true);
         $sql = "SELECT u.id,
@@ -508,6 +510,7 @@ class coursegroups {
         }
         $enrolled->close();
 
+        $this->mtrace('This is the subquery: ' . $esql);
         if (!empty($currentmembers)) {
             // Diff current and intended members in each direction to determine toadd and toremove lists.
             $toadd = array_diff_key($intendedmembers, $currentmembers);
@@ -618,11 +621,32 @@ class coursegroups {
      * @return array $teacher_ids array containing ids of teachers.
      */
     public function get_teacher_ids_of_course($courseid) {
+        $teacherrole = get_config('local_o365', 'rolemappingteacher');
+        if (!$teacherrole || $teacherrole == 'teacher') {
+            // Fall back to the default role.
+            $teacherrole = 'teacher';
+            $rolenoneditingteacher = $this->DB->get_record('role', array('shortname' => $teacherrole))->id;
+        } else {
+            $rolenoneditingteacher = explode(',', $teacherrole);
+        }
+        $editingteacherrole = get_config('local_o365', 'rolemappingeditingteacher');
+        if (!$editingteacherrole || $editingteacherrole == 'editingteacher') {
+            // Fall back to the default role.
+            $editingteacherrole = 'editingteacher';
+            $roleteacher = $this->DB->get_record('role', array('shortname' => $editingteacherrole))->id;
+        } else {
+            $roleteacher = explode(',', $editingteacherrole);
+        }
         $context = \context_course::instance($courseid);
-        $allteachers = get_users_by_capability($context, 'local/o365:teamowner', 'u.id');
+        $teachers = get_role_users($roleteacher, $context, false, 'ra.id, u.id AS userid, u.lastname, u.firstname');
+        $noneditingteachers = get_role_users($rolenoneditingteacher, $context, false, 'ra.id, u.id AS userid, u.lastname, u.firstname');
+        $allteachers = array_merge($teachers, $noneditingteachers);
         $teacherids = array();
         foreach ($allteachers as $teacher) {
-            array_push($teacherids, $teacher->id);
+            // A user can have multiple roles. Need to make sure they're only added to our teacherids array once.
+            if (!in_array($teacher->userid, $teacherids)) {
+                array_push($teacherids, $teacher->userid);
+            }
         }
         return $teacherids;
     }
