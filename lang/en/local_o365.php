@@ -28,6 +28,8 @@ $string['acp_healthcheck'] = 'Health Check';
 $string['acp_maintenance'] = 'Maintenance Tools';
 $string['acp_maintenance_cleanoidctokens'] = 'Cleanup OpenID Connect Tokens';
 $string['acp_maintenance_cleanoidctokens_desc'] = 'If your users are experiencing problems logging in using their Office 365 account, trying cleaning up OpenID Connect tokens. This removes stray and incomplete tokens that can cause errors. WARNING: This may interrupt logins in-process, so it\'s best to do this during downtime.';
+$string['acp_maintenance_cleandeltatoken'] = 'Cleanup User Sync Delta Tokens';
+$string['acp_maintenance_cleandeltatoken_desc'] = 'If user synchronisation is not fully working after updating it user sync settings, it may be caused by an old delta sync token. Cleaning up the token will remove force a complete re-sync the next time when the user sync is run.';
 $string['acp_maintenance_desc'] = 'These tools can help you resolve some common issues.';
 $string['acp_maintenance_warning'] = 'Warning: These are advanced tools. Please use them only if you understand what you are doing.';
 $string['acp_maintenance_coursegroupusers'] = 'Resync users in groups for courses.';
@@ -689,14 +691,14 @@ $string['participants_submitted_needs_grading'] = 'Participants - {$a->participa
 $string['pending_submissions_due_date'] = 'Pending submissions - {$a->incomplete} / {$a->total} &nbsp; |  &nbsp; Due - {$a->duedate}';
 $string['sorry_do_not_understand'] = 'Sorry, I do not understand';
 $string['question_student_assignments_compared'] = "How did I do in my latest assignments compared to the class?";
-$string['question_student_assignments_due'] = "What assignments are due next?";
+$string['question_student_assignments_due'] = "Which assignments are due next?";
 $string['question_student_latest_grades'] = "What are the latest grades I've received?";
 $string['question_teacher_absent_students'] = "Which students have been absent this month?";
 $string['question_teacher_assignments_incomplete_submissions'] = "How many assignments have incomplete submissions?";
-$string['question_teacher_assignments_for_grading'] = "What assignments are yet to be graded?";
-$string['question_teacher_last_logged_students'] = "Which students have logged in last to moodle?";
+$string['question_teacher_assignments_for_grading'] = "Which assignments are yet to be graded?";
+$string['question_teacher_last_logged_students'] = "Which students have logged into Moodle (most recent first)?";
 $string['question_teacher_late_submissions'] = "Which students have made late submissions?";
-$string['question_teacher_latest_logged_students'] = "Which students have logged in latest to moodle?";
+$string['question_teacher_latest_logged_students'] = "Which students have logged into Moodle (oldest first)?";
 $string['question_teacher_least_scored_in_assignment'] = "Which students scored the least in the last assignment?";
 $string['question_teacher_student_last_logged'] = "When did Firstname Lastname last log into moodle?";
 $string['your_grade'] = 'Your grade - {$a}';
@@ -710,8 +712,10 @@ $string['settings_teams_additional_instructions'] = '<h4 class="local_o365_setti
 <li>Go to <a href="settings.php?section=manageauths" target="_blank">Manage authentication</a> and enable OpenID Connect.</li>
 <li>Go to <a href="settings.php?section=httpsecurity" target="_blank">HTTP security</a> and enable Frame Embedding.</li>
 <li>Go to <a href="settings.php?section=optionalsubsystems" target="_blank">Advanced features</a> and Enable Web Services.</li>
+<li>Go to <a href="settings.php?section=webserviceprotocols" target="_blank">Manage protocols</a> and Enable Rest protocol.</li>
 <li>Go to <a href="settings.php?section=externalservices" target="_blank">External Services</a> to enable Office 365 Webservices.</li>
 <li>Go to <a href="{$a->edituserroleurl}" target="_blank">Editing role \'Authenticated user\'</a> to set  "Create a web service token" to "Allow".</li>
+<li>Go to <a href="{$a->edituserroleurl}" target="_blank">Editing role \'Authenticated user\'</a> to set "Use Rest Protocol" to "Allow".</li>
 <li>Go to the <a href="https://aka.ms/MoodleBotRegistration" target="_blank">App registrations section of Azure Portal</a> and register a new app. Enter the application ID and client secret below:</li>
 </ul>';
 $string['settings_bot_feature_enabled'] = 'Bot feature enabled';
