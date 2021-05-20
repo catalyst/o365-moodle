@@ -652,133 +652,143 @@ class main {
             $switchauthminupnsplit0 = 10;
         }
 
-        $usernames = [];
-        $upns = [];
-        foreach ($aadusers as $i => $user) {
-            $upnlower = \core_text::strtolower($user['userPrincipalName']);
-            $aadusers[$i]['upnlower'] = $upnlower;
+        $aadusers_complete = $aadusers;
+        $aadusers_batch = array_chunk($aadusers_complete, 8192);
 
-            $usernames[] = $upnlower;
-            $upns[] = $upnlower;
+        foreach ($aadusers_batch as $aadusers) {
+            $this->mtrace('Syncing batch of Azure AD users...');
+            $usernames = [];
+            $upns = [];
+            foreach ($aadusers as $i => $user) {
+                if (!array_key_exists('userPrincipalName',$user)) {
+                    $this->mtrace('Azure AD user missing userPrincipalName (' . $user['objectId'] . '); skipping...');
+                    continue;
+                }
+                $upnlower = \core_text::strtolower($user['userPrincipalName']);
+                $aadusers[$i]['upnlower'] = $upnlower;
 
-            $upnsplit = explode('@', $upnlower);
-            if (!empty($upnsplit[0])) {
-                $aadusers[$i]['upnsplit0'] = $upnsplit[0];
-                $usernames[] = $upnsplit[0];
-            }
-        }
+                $usernames[] = $upnlower;
+                $upns[] = $upnlower;
 
-        if (isset($aadsync['emailsync'])) {
-            $select = 'SELECT u.email,
-                       u.username,';
-            $where = ' WHERE LOWER(u.email)';
-        } else {
-            $select = 'SELECT u.username,';
-            $where = ' WHERE LOWER(u.username)';
-        }
-
-        list($usernamesql, $usernameparams) = $DB->get_in_or_equal($usernames);
-        $sql = "$select
-                       u.id as muserid,
-                       u.auth,
-                       tok.id as tokid,
-                       conn.id as existingconnectionid,
-                       assign.assigned assigned,
-                       assign.photoid photoid,
-                       assign.photoupdated photoupdated,
-                       obj.id AS objrecid
-                  FROM {user} u
-             LEFT JOIN {auth_oidc_token} tok ON tok.userid = u.id
-             LEFT JOIN {local_o365_connections} conn ON conn.muserid = u.id
-             LEFT JOIN {local_o365_appassign} assign ON assign.muserid = u.id
-             LEFT JOIN {local_o365_objects} obj ON obj.type = ? AND obj.moodleid = u.id
-                 $where $usernamesql AND u.mnethostid = ? AND u.deleted = ?
-              ORDER BY CONCAT(u.username, '~')"; // Sort john.smith@example.org before john.smith.
-        $params = array_merge(['user'], $usernameparams, [$CFG->mnet_localhost_id, '0']);
-        $existingusers = $DB->get_records_sql($sql, $params);
-
-        // Fetch linked AAD user accounts.
-        list($upnsql, $upnparams) = $DB->get_in_or_equal($upns);
-        list($usernamesql, $usernameparams) = $DB->get_in_or_equal($usernames, SQL_PARAMS_QM, 'param', false);
-        $sql = 'SELECT tok.oidcusername,
-                       u.username as username,
-                       u.id as muserid,
-                       u.auth,
-                       tok.id as tokid,
-                       conn.id as existingconnectionid,
-                       assign.assigned assigned,
-                       assign.photoid photoid,
-                       assign.photoupdated photoupdated,
-                       obj.id AS objrecid
-                  FROM {user} u
-             LEFT JOIN {auth_oidc_token} tok ON tok.userid = u.id
-             LEFT JOIN {local_o365_connections} conn ON conn.muserid = u.id
-             LEFT JOIN {local_o365_appassign} assign ON assign.muserid = u.id
-             LEFT JOIN {local_o365_objects} obj ON obj.type = ? AND obj.moodleid = u.id
-                 WHERE tok.oidcusername '.$upnsql.' AND LOWER(u.username) '.$usernamesql.' AND u.mnethostid = ? AND u.deleted = ? ';
-        $params = array_merge(['user'], $upnparams, $usernameparams, [$CFG->mnet_localhost_id, '0']);
-        $linkedexistingusers = $DB->get_records_sql($sql, $params);
-
-        $existingusers = array_merge($existingusers, $linkedexistingusers);
-
-        foreach ($aadusers as $user) {
-            $this->mtrace(' ');
-
-            if (empty($user['upnlower'])) {
-                $this->mtrace('Azure AD user missing UPN (' . $user['objectId'] . '); skipping...');
-                continue;
+                $upnsplit = explode('@', $upnlower);
+                if (!empty($upnsplit[0])) {
+                    $aadusers[$i]['upnsplit0'] = $upnsplit[0];
+                    $usernames[] = $upnsplit[0];
+                }
             }
 
-            $this->mtrace('Syncing user '.$user['upnlower']);
-
-            if (\local_o365\rest\unified::is_configured()) {
-                $userobjectid = $user['id'];
+            if (isset($aadsync['emailsync'])) {
+                $select = 'SELECT u.email,
+                           u.username,';
+                $where = ' WHERE LOWER(u.email)';
             } else {
-                $userobjectid = $user['objectId'];
+                $select = 'SELECT u.username,';
+                $where = ' WHERE LOWER(u.username)';
             }
 
-            if (!isset($existingusers[$user['upnlower']]) && !isset($existingusers[$user['upnsplit0']])) {
-                $newmuser = $this->sync_new_user($aadsync, $user);
-            } else {
-                $existinguser = null;
-                if (isset($existingusers[$user['upnlower']])) {
-                    $existinguser = $existingusers[$user['upnlower']];
-                    $exactmatch = true;
-                } else if (isset($existingusers[$user['upnsplit0']])) {
-                    $existinguser = $existingusers[$user['upnsplit0']];
-                    $exactmatch = strlen($user['upnsplit0']) >= $switchauthminupnsplit0;
+            list($usernamesql, $usernameparams) = $DB->get_in_or_equal($usernames);
+            $sql = "$select
+                           u.id as muserid,
+                           u.auth,
+                           tok.id as tokid,
+                           conn.id as existingconnectionid,
+                           assign.assigned assigned,
+                           assign.photoid photoid,
+                           assign.photoupdated photoupdated,
+                           obj.id AS objrecid
+                      FROM {user} u
+                 LEFT JOIN {auth_oidc_token} tok ON tok.userid = u.id
+                 LEFT JOIN {local_o365_connections} conn ON conn.muserid = u.id
+                 LEFT JOIN {local_o365_appassign} assign ON assign.muserid = u.id
+                 LEFT JOIN {local_o365_objects} obj ON obj.type = ? AND obj.moodleid = u.id
+                     $where $usernamesql AND u.mnethostid = ? AND u.deleted = ?
+                  ORDER BY CONCAT(u.username, '~')"; // Sort john.smith@example.org before john.smith.
+            $params = array_merge(['user'], $usernameparams, [$CFG->mnet_localhost_id, '0']);
+            $existingusers = $DB->get_records_sql($sql, $params);
+
+            // Fetch linked AAD user accounts.
+            list($upnsql, $upnparams) = $DB->get_in_or_equal($upns);
+            list($usernamesql, $usernameparams) = $DB->get_in_or_equal($usernames, SQL_PARAMS_QM, 'param', false);
+            $sql = 'SELECT tok.oidcusername,
+                           u.username as username,
+                           u.id as muserid,
+                           u.auth,
+                           tok.id as tokid,
+                           conn.id as existingconnectionid,
+                           assign.assigned assigned,
+                           assign.photoid photoid,
+                           assign.photoupdated photoupdated,
+                           obj.id AS objrecid
+                      FROM {user} u
+                 LEFT JOIN {auth_oidc_token} tok ON tok.userid = u.id
+                 LEFT JOIN {local_o365_connections} conn ON conn.muserid = u.id
+                 LEFT JOIN {local_o365_appassign} assign ON assign.muserid = u.id
+                 LEFT JOIN {local_o365_objects} obj ON obj.type = ? AND obj.moodleid = u.id
+                     WHERE tok.oidcusername '.$upnsql.' AND LOWER(u.username) '.$usernamesql.' AND u.mnethostid = ? AND u.deleted = ? ';
+            $params = array_merge(['user'], $upnparams, $usernameparams, [$CFG->mnet_localhost_id, '0']);
+            $linkedexistingusers = $DB->get_records_sql($sql, $params);
+
+            $existingusers = array_merge($existingusers, $linkedexistingusers);
+
+            foreach ($aadusers as $user) {
+                $this->mtrace(' ');
+
+                if (empty($user['upnlower'])) {
+                    $this->mtrace('Azure AD user missing UPN (' . $user['objectId'] . '); skipping...');
+                    continue;
                 }
 
-                $result = $this->sync_existing_user($aadsync, $user, $existinguser, $exactmatch);
+                $this->mtrace('Syncing user '.$user['upnlower']);
 
-                if ($existinguser->auth === 'oidc' || empty($existinguser->tokid)) {
-                    // Create userobject if it does not exist.
-                    if (empty($existinguser->objrecid)) {
-                        $this->mtrace('Adding o365 object record for user.');
-                        $now = time();
-                        $userobjectdata = (object)[
-                            'type' => 'user',
-                            'subtype' => '',
-                            'objectid' => $userobjectid,
-                            'o365name' => $user['userPrincipalName'],
-                            'moodleid' => $existinguser->muserid,
-                            'tenant' => '',
-                            'timecreated' => $now,
-                            'timemodified' => $now,
-                        ];
-                        $userobjectdata->id = $DB->insert_record('local_o365_objects', $userobjectdata);
+                if (\local_o365\rest\unified::is_configured()) {
+                    $userobjectid = $user['id'];
+                } else {
+                    $userobjectid = $user['objectId'];
+                }
+
+                if (!isset($existingusers[$user['upnlower']]) && !isset($existingusers[$user['upnsplit0']])) {
+                    $newmuser = $this->sync_new_user($aadsync, $user);
+                } else {
+                    $existinguser = null;
+                    if (isset($existingusers[$user['upnlower']])) {
+                        $existinguser = $existingusers[$user['upnlower']];
+                        $exactmatch = true;
+                    } else if (isset($existingusers[$user['upnsplit0']])) {
+                        $existinguser = $existingusers[$user['upnsplit0']];
+                        $exactmatch = strlen($user['upnsplit0']) >= $switchauthminupnsplit0;
                     }
-                    // User already connected.
-                    $this->mtrace('User is now synced.');
-                }
 
-                // Update existing user on moodle from AD
-                if ($existinguser->auth === 'oidc') {
-                    if(isset($aadsync['update'])) {
-                        $this->mtrace('Updating Moodle user data from Azure AD user data.');
-                        $fullexistinguser = get_complete_user_data('username', $existinguser->username);
-                        $this->update_user_from_aaddata($user, $fullexistinguser);
-                        $this->mtrace('User is now updated.');
+                    $result = $this->sync_existing_user($aadsync, $user, $existinguser, $exactmatch);
+
+                    if ($existinguser->auth === 'oidc' || empty($existinguser->tokid)) {
+                        // Create userobject if it does not exist.
+                        if (empty($existinguser->objrecid)) {
+                            $this->mtrace('Adding o365 object record for user.');
+                            $now = time();
+                            $userobjectdata = (object)[
+                                'type' => 'user',
+                                'subtype' => '',
+                                'objectid' => $userobjectid,
+                                'o365name' => $user['userPrincipalName'],
+                                'moodleid' => $existinguser->muserid,
+                                'tenant' => '',
+                                'timecreated' => $now,
+                                'timemodified' => $now,
+                            ];
+                            $userobjectdata->id = $DB->insert_record('local_o365_objects', $userobjectdata);
+                        }
+                        // User already connected.
+                        $this->mtrace('User is now synced.');
+                    }
+
+                    // Update existing user on moodle from AD
+                    if ($existinguser->auth === 'oidc') {
+                        if(isset($aadsync['update'])) {
+                            $this->mtrace('Updating Moodle user data from Azure AD user data.');
+                            $fullexistinguser = get_complete_user_data('username', $existinguser->username);
+                            $this->update_user_from_aaddata($user, $fullexistinguser);
+                            $this->mtrace('User is now updated.');
+                        }
                     }
                 }
             }
