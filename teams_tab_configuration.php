@@ -40,7 +40,7 @@ if (get_config('theme_boost_o365teams', 'version')) {
 }
 
 echo "<link rel=\"stylesheet\" type=\"text/css\" href=\"styles.css\">";
-echo "<script src=\"https://statics.teams.microsoft.com/sdk/v1.7.0/js/MicrosoftTeams.min.js\" crossorigin=\"anonymous\"></script>";
+echo "<script src=\"https://statics.teams.microsoft.com/sdk/v1.9.0/js/MicrosoftTeams.min.js\" crossorigin=\"anonymous\"></script>";
 echo "<script src=\"https://secure.aadcdn.microsoftonline-p.com/lib/1.0.17/js/adal.min.js\" crossorigin=\"anonymous\"></script>";
 echo "<script src=\"https://code.jquery.com/jquery-3.1.1.js\" crossorigin=\"anonymous\"></script>";
 
@@ -63,6 +63,11 @@ echo html_writer::tag('button', get_string('other_login', 'local_o365'),
     ['onclick' => 'otherLogin()', 'class' => 'local_o365_manual_login_button']);
 echo html_writer::end_div();
 
+$tenantid = get_config('local_o365', 'aadtenantid');
+if (!$tenantid) {
+    $tenantid = 'common';
+}
+
 $js = "
 microsoftTeams.initialize();
 
@@ -70,7 +75,32 @@ if (!inIframe() && !isMobileApp()) {
     window.location.href = '" . $redirecturl->out(false) . "';
 }
 
+let queryParams = getQueryParameters();
+let loginHint = queryParams['loginHint'];
+let tenantId = '{$tenantid}';
+
+let config = {
+    tenant: tenantId,
+    clientId: '" . get_config('auth_oidc', 'clientid') . "',
+    redirectUri: '" . $CFG->wwwroot . "/local/sso_end.php',
+    cacheLocation: 'localStorage',
+    navigateToLoginRequestUrl: false,
+    extraQueryParameter: 'scope=openid+profile&login_hint=' + encodeURIComponent(loginHint),
+};
+
 window.onload = setTitles;
+
+// Parse query parameters into key-value pairs
+function getQueryParameters() {
+    let queryParams = {};
+    location.search.substr(1).split('&').forEach(function(item) {
+        let s = item.split('='),
+        k = s[0],
+        v = s[1] && decodeURIComponent(s[1]);
+        queryParams[k] = v;
+    });
+    return queryParams;
+}
 
 function setTitles() {
     var text;
@@ -154,8 +184,9 @@ function login() {
         height: 400,
         successCallback: function (result) {
             // AuthenticationContext is a singleton
-            let authContext = new AuthenticationContext();
+            let authContext = new AuthenticationContext(config);
             let idToken = authContext.getCachedToken(config.clientId);
+
             if (idToken) {
                 // login using the token
                 window.location.href = '" . $oidcloginurl->out(false) . "';
@@ -181,42 +212,45 @@ function otherLogin() {
 }
 
 function ssoLogin() {
-    microsoftTeams.authentication.getAuthToken({
-        successCallback: (result) => {
-            const url = '" . $ssologinurl->out() . "';
+    var isloggedin = " . (int) ($USER->id != 0) . ";
 
-            return fetch(url, {
-                method: 'POST',
-                headers: {
-                    'Content-Type' : 'application/x-www-form-urlencoded',
-                    'Authorization' : result
-                },
-                mode: 'cors',
-                cache: 'default'
-            }).then((response) => {
-                if (response.status == 200) {
-                    // Nothing to do here.
-                    if (!window.location.hash) {
-                        window.location = window.location + '#loaded';
-                        window.location.reload();
+    if (!isloggedin) {
+        microsoftTeams.authentication.getAuthToken({
+            successCallback: (result) => {
+                const url = '" . $ssologinurl->out() . "';
+                
+                return fetch(url, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type' : 'application/x-www-form-urlencoded',
+                        'Authorization' : result
+                    },
+                    mode: 'cors',
+                    cache: 'default'
+                }).then((response) => {
+                    if (response.status == 200) {
+                        // Nothing to do here.
+                        if (!window.location.hash) {
+                            window.location = window.location + '#loaded';
+                            window.location.reload();
+                        }
+                    } else {
+                        // Manual login.
+                        $('.local_o365_manual_login').css('display', 'block');
+                        $('#local_o365_course_list').css('display', 'none');
                     }
-                } else {
-                    // Manual login.
-                    $('.local_o365_manual_login').css('display', 'block');
-                    $('#local_o365_course_list').css('display', 'none');
-                }
-            });
-        },
-        failureCallback: function (error) {
-            // Manual login.
-            $('.local_o365_manual_login').css('display', 'block');
-            $('#local_o365_course_list').css('display', 'none');
-        }
-    });
+                });
+            },
+            failureCallback: function (error) {
+                // Manual login.
+                $('.local_o365_manual_login').css('display', 'block');
+                $('#local_o365_course_list').css('display', 'none');
+            }
+        });
+    }
 }
 
 ssoLogin();
-
 ";
 
 echo html_writer::script($js);

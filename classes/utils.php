@@ -67,16 +67,18 @@ class utils {
     /**
      * Get an app token if available or fall back to system API user token.
      *
-     * @param string $resource The desired resource.
+     * @param string $tokenresource The desired resource.
      * @param \local_o365\oauth2\clientdata $clientdata Client credentials.
      * @param \local_o365\httpclientinterface $httpclient An HTTP client.
+     * @param bool $forcecreate
+     *
      * @return \local_o365\oauth2\apptoken|\local_o365\oauth2\systemapiusertoken An app or system token.
      */
-    public static function get_app_or_system_token($resource, $clientdata, $httpclient, $forcecreate = false) {
+    public static function get_app_or_system_token($tokenresource, $clientdata, $httpclient, $forcecreate = false) {
         $token = null;
         try {
             if (static::is_configured_apponlyaccess() === true) {
-                $token = \local_o365\oauth2\apptoken::instance(null, $resource, $clientdata, $httpclient, $forcecreate);
+                $token = \local_o365\oauth2\apptoken::instance(null, $tokenresource, $clientdata, $httpclient, $forcecreate);
             }
         } catch (\Exception $e) {
             static::debug($e->getMessage(), 'get_app_or_system_token (app)', $e);
@@ -84,7 +86,7 @@ class utils {
 
         if (empty($token)) {
             try {
-                $token = \local_o365\oauth2\systemapiusertoken::instance(null, $resource, $clientdata, $httpclient);
+                $token = \local_o365\oauth2\systemapiusertoken::instance(null, $tokenresource, $clientdata, $httpclient);
             } catch (\Exception $e) {
                 static::debug($e->getMessage(), 'get_app_or_system_token (system)', $e);
             }
@@ -165,13 +167,13 @@ class utils {
         if (empty($userids)) {
             return [];
         }
-        $aadresource = \local_o365\rest\azuread::get_resource();
+        $aadresource = \local_o365\rest\azuread::get_tokenresource();
         list($idsql, $idparams) = $DB->get_in_or_equal($userids);
         $sql = 'SELECT u.id as userid
                   FROM {user} u
              LEFT JOIN {local_o365_token} localtok ON localtok.user_id = u.id
-             LEFT JOIN {auth_oidc_token} authtok ON authtok.resource = ? AND authtok.userid = u.id
-                 WHERE u.id '.$idsql.'
+             LEFT JOIN {auth_oidc_token} authtok ON authtok.tokenresource = ? AND authtok.userid = u.id
+                 WHERE u.id ' . $idsql . '
                        AND (localtok.id IS NOT NULL OR authtok.id IS NOT NULL)';
         $params = [$aadresource];
         $params = array_merge($params, $idparams);
@@ -184,10 +186,10 @@ class utils {
     }
 
     /**
-     * Get the UPN of the connected Office 365 account.
+     * Get the UPN of the connected Microsoft 365 account.
      *
      * @param int $userid The Moodle user id.
-     * @return string|null The UPN of the connected Office 365 account, or null if none found.
+     * @return string|null The UPN of the connected Microsoft 365 account, or null if none found.
      */
     public static function get_o365_upn($userid) {
         $o365user = \local_o365\obj\o365user::instance_from_muserid($userid);
@@ -195,7 +197,7 @@ class utils {
     }
 
     /**
-     * Determine if a user is connected to Office 365.
+     * Determine if a user is connected to Microsoft 365.
      *
      * @param int $userid The user's ID.
      * @return bool Whether they are connected (true) or not (false).
@@ -267,17 +269,17 @@ class utils {
         }
 
         if ($unifiedconfigured === true) {
-            $resource = \local_o365\rest\unified::get_resource();
+            $tokenresource = \local_o365\rest\unified::get_tokenresource();
         } else {
-            $resource = \local_o365\rest\azuread::get_resource();
+            $tokenresource = \local_o365\rest\azuread::get_tokenresource();
         }
 
         $clientdata = \local_o365\oauth2\clientdata::instance_from_oidc();
         $httpclient = new \local_o365\httpclient();
         if (!empty($userid)) {
-            $token = \local_o365\oauth2\token::instance($userid, $resource, $clientdata, $httpclient);
+            $token = \local_o365\oauth2\token::instance($userid, $tokenresource, $clientdata, $httpclient);
         } else {
-            $token = \local_o365\utils::get_app_or_system_token($resource, $clientdata, $httpclient);
+            $token = \local_o365\utils::get_app_or_system_token($tokenresource, $clientdata, $httpclient);
         }
         if (empty($token)) {
             throw new \Exception('No token available for system user. Please run local_o365 health check.');
@@ -292,7 +294,7 @@ class utils {
     }
 
     /**
-     * Enable an additional Office 365 tenant/
+     * Enable an additional Microsoft 365 tenant/
      */
     public static function enableadditionaltenant($tenant) {
         $configuredtenants = get_config('local_o365', 'multitenants');
@@ -325,7 +327,7 @@ class utils {
     }
 
     /**
-     * Disable an additional Office 365 tenant.
+     * Disable an additional Microsoft 365 tenant.
      */
     public static function disableadditionaltenant($tenant) {
         $o365config = get_config('local_o365');
@@ -358,10 +360,10 @@ class utils {
         try {
             $clientdata = \local_o365\oauth2\clientdata::instance_from_oidc();
             $httpclient = new \local_o365\httpclient();
-            $resource = (\local_o365\rest\unified::is_enabled() === true)
-                ? \local_o365\rest\unified::get_resource()
-                : \local_o365\rest\discovery::get_resource();
-            $token = \local_o365\oauth2\token::instance($userid, $resource, $clientdata, $httpclient);
+            $tokenresource = (\local_o365\rest\unified::is_enabled() === true)
+                ? \local_o365\rest\unified::get_tokenresource()
+                : \local_o365\rest\discovery::get_tokenresource();
+            $token = \local_o365\oauth2\token::instance($userid, $tokenresource, $clientdata, $httpclient);
             if (!empty($token)) {
                 $apiclient = (\local_o365\rest\unified::is_enabled() === true)
                     ? new \local_o365\rest\unified($token, $httpclient)
@@ -387,10 +389,10 @@ class utils {
         try {
             $clientdata = \local_o365\oauth2\clientdata::instance_from_oidc();
             $httpclient = new \local_o365\httpclient();
-            $resource = (\local_o365\rest\unified::is_enabled() === true)
-                ? \local_o365\rest\unified::get_resource()
-                : \local_o365\rest\discovery::get_resource();
-            $token = \local_o365\oauth2\token::instance($userid, $resource, $clientdata, $httpclient);
+            $tokenresource = (\local_o365\rest\unified::is_enabled() === true)
+                ? \local_o365\rest\unified::get_tokenresource()
+                : \local_o365\rest\discovery::get_tokenresource();
+            $token = \local_o365\oauth2\token::instance($userid, $tokenresource, $clientdata, $httpclient);
             if (!empty($token)) {
                 $apiclient = (\local_o365\rest\unified::is_enabled() === true)
                     ? new \local_o365\rest\unified($token, $httpclient)

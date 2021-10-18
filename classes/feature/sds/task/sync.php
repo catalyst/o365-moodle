@@ -301,7 +301,7 @@ class sync extends \core\task\scheduled_task {
     /**
      * Get or create the course category for a school.
      *
-     * @param string $schoolobjectid The Office 365 object ID of the school.
+     * @param string $schoolobjectid The Microsoft 365 object ID of the school.
      * @param string $schoolname The name of the school.
      * @return \coursecat A coursecat object for the retrieved or created course category.
      */
@@ -358,10 +358,10 @@ class sync extends \core\task\scheduled_task {
      */
     public static function get_apiclient() {
         $httpclient = new \local_o365\httpclient();
-        $resource = \local_o365\rest\sds::get_resource();
+        $tokenresource = \local_o365\rest\sds::get_tokenresource();
         $clientdata = \local_o365\oauth2\clientdata::instance_from_oidc();
         if (!empty($clientdata)) {
-            $token = \local_o365\oauth2\systemapiusertoken::instance(null, $resource, $clientdata, $httpclient);
+            $token = \local_o365\oauth2\systemapiusertoken::instance(null, $tokenresource, $clientdata, $httpclient);
             if (!empty($token)) {
                 $apiclient = new \local_o365\rest\sds($token, $httpclient);
                 return $apiclient;

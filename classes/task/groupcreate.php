@@ -24,7 +24,7 @@
 namespace local_o365\task;
 
 /**
- * Create any needed groups in Office 365.
+ * Create any needed groups in Microsoft 365.
  */
 class groupcreate extends \core\task\scheduled_task {
     /**
@@ -54,7 +54,7 @@ class groupcreate extends \core\task\scheduled_task {
         $httpclient = new \local_o365\httpclient();
         $clientdata = \local_o365\oauth2\clientdata::instance_from_oidc();
 
-        $unifiedresource = \local_o365\rest\unified::get_resource();
+        $unifiedresource = \local_o365\rest\unified::get_tokenresource();
         $unifiedtoken = \local_o365\utils::get_app_or_system_token($unifiedresource, $clientdata, $httpclient);
         if (empty($unifiedtoken)) {
             mtrace('Could not get graph API token.');
@@ -65,5 +65,6 @@ class groupcreate extends \core\task\scheduled_task {
         $coursegroups = new \local_o365\feature\usergroups\coursegroups($graphclient, $DB, true);
         $coursegroups->create_groups_for_new_courses();
         $coursegroups->sync_group_profile_photo();
+        $coursegroups->update_teams_cache();
     }
 }

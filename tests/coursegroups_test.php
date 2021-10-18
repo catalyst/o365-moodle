@@ -72,12 +72,12 @@ class local_o365_coursegroups_testcase extends \advanced_testcase {
             'refreshtoken' => 'refreshtoken',
             'scope' => 'scope',
             'user_id' => '2',
-            'resource' => 'resource',
+            'tokenresource' => 'resource',
         ];
 
         $clientdata = $this->get_mock_clientdata();
         $token = new \local_o365\oauth2\token($tokenrec->token, $tokenrec->expiry, $tokenrec->refreshtoken,
-                $tokenrec->scope, $tokenrec->resource, $tokenrec->user_id, $clientdata, $httpclient);
+                $tokenrec->scope, $tokenrec->tokenresource, $tokenrec->user_id, $clientdata, $httpclient);
         return $token;
     }
 
@@ -107,7 +107,7 @@ class local_o365_coursegroups_testcase extends \advanced_testcase {
         $httpclient->set_response(json_encode($fixedresponse));
 
         $coursegroups = $this->constructcoursegroupsinstance($httpclient);
-        $objectrec = $coursegroups->create_group($course, 'prefix 1@:-_');
+        $objectrec = $coursegroups->create_group($course); // This may need to be updated to consider the new naming settings.
 
         // Assert returned object record.
         $expectedobjectrec = [
@@ -115,7 +115,7 @@ class local_o365_coursegroups_testcase extends \advanced_testcase {
             'subtype' => 'course',
             'objectid' => 'group1',
             'moodleid' => $course->id,
-            'o365name' => 'prefix 1@:-_: '.$course->fullname,
+            'o365name' => $course->fullname,
         ];
         $this->assertEquals($expectedobjectrec, array_intersect_key($objectrec, $expectedobjectrec));
 
@@ -169,7 +169,7 @@ class local_o365_coursegroups_testcase extends \advanced_testcase {
         foreach ($users as $i => $user) {
             $tokenrec = [
                 'oidcuniqid' => 'user'.$i,
-                'resource' => 'https://graph.microsoft.com',
+                'tokenresource' => 'https://graph.microsoft.com',
                 'username' => $user->username,
                 'userid' => $user->id,
                 'scope' => 'User.Read',
@@ -257,9 +257,9 @@ class local_o365_coursegroups_testcase extends \advanced_testcase {
         ];
         $this->assertEquals($expectedrequests, $requests);
 
-        $expectedtoadd = ['user0' => $users[0]->id];
+        $expectedtoadd = [$users[0]->id];
         $this->assertEquals($expectedtoadd, $toadd);
-        $expectedtoremove = ['user2' => 'user2'];
+        $expectedtoremove = [$users[2]->id];
         $this->assertEquals($expectedtoremove, $toremove);
     }
 }

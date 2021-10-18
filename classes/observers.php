@@ -57,7 +57,7 @@ class observers {
                         'token' => $eventdata['other']['tokenparams']['access_token'],
                         'scope' => $eventdata['other']['tokenparams']['scope'],
                         'refreshtoken' => $eventdata['other']['tokenparams']['refresh_token'],
-                        'resource' => $eventdata['other']['tokenparams']['resource'],
+                        'tokenresource' => $eventdata['other']['tokenparams']['resource'],
                         'expiry' => $eventdata['other']['tokenparams']['expires_on'],
                     ]
                 ];
@@ -93,10 +93,10 @@ class observers {
                 $scope = $eventdata['other']['tokenparams']['scope'];
                 $res = $eventdata['other']['tokenparams']['resource'];
                 $token = new \local_o365\oauth2\token($token, $expiry, $rtoken, $scope, $res, null, $clientdata, $httpclient);
-                $resource = (\local_o365\rest\unified::is_enabled() === true)
-                    ? \local_o365\rest\unified::get_resource()
-                    : \local_o365\rest\discovery::get_resource();
-                $token = \local_o365\oauth2\token::jump_resource($token, $resource, $clientdata, $httpclient);
+                $tokenresource = (\local_o365\rest\unified::is_enabled() === true)
+                    ? \local_o365\rest\unified::get_tokenresource()
+                    : \local_o365\rest\discovery::get_tokenresource();
+                $token = \local_o365\oauth2\token::jump_tokenresource($token, $tokenresource, $clientdata, $httpclient);
                 $apiclient = (\local_o365\rest\unified::is_enabled() === true)
                     ? new \local_o365\rest\unified($token, $httpclient)
                     : new \local_o365\rest\discovery($token, $httpclient);
@@ -119,6 +119,7 @@ class observers {
      */
     public static function handle_oidc_user_connected(\auth_oidc\event\user_connected $event) {
         global $DB;
+
         $caller = '\local_o365\observers::handle_oidc_user_connected';
         if (\local_o365\utils::is_configured() !== true) {
             return false;
@@ -132,10 +133,15 @@ class observers {
                 // Create local_o365_objects record.
                 if (!empty($eventdata['other']['oidcuniqid'])) {
                     $userobject = $DB->get_record('local_o365_objects', ['type' => 'user', 'moodleid' => $userid]);
+                    $userrecord = \core_user::get_user($userid);
+                    $isguestuser = false;
+                    if (stripos($userrecord->username, '_ext_') !== false) {
+                        $isguestuser = true;
+                    }
                     if (empty($userobject)) {
                         try {
                             $apiclient = \local_o365\utils::get_api();
-                            $userdata = $apiclient->get_user($eventdata['other']['oidcuniqid']);
+                            $userdata = $apiclient->get_user($eventdata['other']['oidcuniqid'], $isguestuser);
                         } catch (\Exception $e) {
                             \local_o365\utils::debug('Exception: '.$e->getMessage(), $caller, $e);
                             return true;
@@ -167,8 +173,34 @@ class observers {
                         $userobjectdata->id = $DB->insert_record('local_o365_objects', $userobjectdata);
                     }
                 } else {
-                    \local_o365\utils::debug('no oidcuniqid received', 'handle_oidc_user_connected', $eventdata);
+                    \local_o365\utils::debug('no oidcuniqid received', $caller, $eventdata);
                 }
+
+                # Enrol user to all courses he was enrolled prior to connecting.
+                # Do not attempt to enrol the user if user groups are not enabled.
+                if (\local_o365\feature\usergroups\utils::is_enabled() === true) {
+                    try {
+                        $apiclient = \local_o365\feature\usergroups\utils::get_graphclient();
+                        $courses = enrol_get_users_courses($userid, true);
+
+                        foreach ($courses as $courseid => $course) {
+                            if (\local_o365\feature\usergroups\utils::course_is_group_enabled($courseid) !== true) {
+                                continue;
+                            }
+
+                            $coursecontext = \context_course::instance($courseid);
+
+                            if (has_capability('local/o365:teamowner', $coursecontext)) {
+                                $apiclient->add_owner_to_course_group($courseid, $userid);
+                            } else if (has_capability('local/o365:teammember', $coursecontext)) {
+                                $apiclient->add_user_to_course_group($courseid, $userid);
+                            }
+                        }
+                    } catch (\Exception $e) {
+                        \local_o365\utils::debug('Exception: ' . $e->getMessage(), $caller, $e);
+                    }
+                }
+
                 return true;
             } catch (\Exception $e) {
                 \local_o365\utils::debug($e->getMessage(), 'handle_oidc_user_connected', $e);
@@ -262,7 +294,7 @@ class observers {
 
         try {
             // Azure AD must be configured for us to fetch data.
-            if (\local_o365\rest\azuread::is_configured() !== true) {
+            if (\local_o365\rest\azuread::is_configured() !== true && \local_o365\rest\unified::is_configured() !== true) {
                 return true;
             }
 
@@ -356,8 +388,8 @@ class observers {
                 $userobjectdata = (object)[
                     'type' => 'user',
                     'subtype' => '',
-                    'objectid' => $userdata['objectId'],
-                    'o365name' => $userdata['userPrincipalName'],
+                    'objectid' => $o365user->objectid,
+                    'o365name' => str_replace('#ext#', '#EXT#', $o365user->upn),
                     'moodleid' => $userid,
                     'tenant' => $tenant,
                     'metadata' => $metadata,
@@ -416,7 +448,9 @@ class observers {
      * @return bool Success/Failure.
      */
     public static function handle_user_enrolment_deleted(\core\event\user_enrolment_deleted $event) {
-        global $DB;
+        global $CFG;
+
+        require_once($CFG->libdir . '/enrollib.php');
 
         if (\local_o365\utils::is_configured() !== true || \local_o365\feature\usergroups\utils::is_enabled() !== true) {
             return false;
@@ -426,6 +460,12 @@ class observers {
         $courseid = $event->courseid;
 
         if (empty($userid) || empty($courseid)) {
+            return true;
+        }
+
+        // If the user is still enrolled in the course, through other enrolment method, don't remove the user from the course group.
+        $coursecontext = \context_course::instance($courseid);
+        if (is_enrolled($coursecontext, $userid)) {
             return true;
         }
 
@@ -444,7 +484,8 @@ class observers {
         } catch (\Exception $e) {
             \local_o365\utils::debug($e->getMessage(), 'handle_user_enrolment_deleted', $e);
         }
-        return false;
+
+        return true;
     }
 
     /**
@@ -510,13 +551,13 @@ class observers {
      */
     public static function construct_sharepoint_api_with_system_user() {
         try {
-            $spresource = \local_o365\rest\sharepoint::get_resource();
-            if (!empty($spresource)) {
+            $sharepointtokenresource = \local_o365\rest\sharepoint::get_tokenresource();
+            if (!empty($sharepointtokenresource)) {
                 $httpclient = new \local_o365\httpclient();
                 $clientdata = \local_o365\oauth2\clientdata::instance_from_oidc();
-                $sptoken = \local_o365\utils::get_app_or_system_token($spresource, $clientdata, $httpclient);
-                if (!empty($sptoken)) {
-                    $sharepoint = new \local_o365\rest\sharepoint($sptoken, $httpclient);
+                $sharepointtoken = \local_o365\utils::get_app_or_system_token($sharepointtokenresource, $clientdata, $httpclient);
+                if (!empty($sharepointtoken)) {
+                    $sharepoint = new \local_o365\rest\sharepoint($sharepointtoken, $httpclient);
                     return $sharepoint;
                 }
             }
@@ -530,40 +571,80 @@ class observers {
      * Handle course_created event.
      *
      * Does the following:
-     *     - create a sharepoint site and associated groups.
+     *  - enable sync on new courses if course sync is "custom", and the option to enable sync on new courses by default is set.
+     *  - create a sharepoint site and associated groups.
      *
      * @param \core\event\course_created $event The triggered event.
      * @return bool Success/Failure.
      */
     public static function handle_course_created(\core\event\course_created $event) {
-        if (\local_o365\utils::is_configured() !== true || \local_o365\rest\sharepoint::is_configured() !== true) {
+        if (\local_o365\utils::is_configured() !== true) {
             return false;
         }
-        $sharepoint = static::construct_sharepoint_api_with_system_user();
-        if (!empty($sharepoint)) {
-            $sharepoint->create_course_site($event->objectid);
+
+        // Enable team sync for newly created courses if the create teams setting is "custom", and the option to enable sync on
+        // new courses by default is on.
+        $syncnewcoursesetting = get_config('local_o365', 'sync_new_course');
+        if ((get_config('local_o365', 'createteams') === 'oncustom') && $syncnewcoursesetting) {
+            \local_o365\feature\usergroups\utils::set_course_group_enabled($event->objectid, true, true);
         }
+        
+        if (\local_o365\rest\sharepoint::is_configured() === true) {
+            $sharepoint = static::construct_sharepoint_api_with_system_user();
+            if (!empty($sharepoint)) {
+                $sharepoint->create_course_site($event->objectid);
+            }
+        }
+
+        return true;
     }
 
     /**
      * Handle course_updated event.
      *
      * Does the following:
-     *     - update associated sharepoint sites and associated groups.
+     *  - update Teams or group names, if the options are enabled.
+     *  - update associated sharepoint sites.
      *
      * @param \core\event\course_updated $event The triggered event.
      * @return bool Success/Failure.
      */
     public static function handle_course_updated(\core\event\course_updated $event) {
-        if (\local_o365\utils::is_configured() !== true || \local_o365\rest\sharepoint::is_configured() !== true) {
+        global $DB;
+
+        if (\local_o365\utils::is_configured() !== true) {
             return false;
         }
         $courseid = $event->objectid;
         $eventdata = $event->get_data();
         if (!empty($eventdata['other'])) {
-            $sharepoint = static::construct_sharepoint_api_with_system_user();
-            if (!empty($sharepoint)) {
-                $sharepoint->update_course_site($courseid, $eventdata['other']['shortname'], $eventdata['other']['fullname']);
+            // Update Teams/group names.
+            $teamsyncenabled = get_config('local_o365', 'team_name_sync');
+            $groupsyncenabled = get_config('local_o365', 'group_name_sync');
+
+            if (($teamsyncenabled || $groupsyncenabled) && \local_o365\feature\usergroups\utils::is_enabled() === true) {
+                $apiclient = \local_o365\feature\usergroups\utils::get_graphclient();
+                $coursegroups = new \local_o365\feature\usergroups\coursegroups($apiclient, $DB, true);
+
+                if (\local_o365\feature\usergroups\utils::course_is_group_feature_enabled($courseid, 'team')) {
+                    if ($teamsyncenabled) {
+                        $coursegroups->update_team_name($courseid);
+                    }
+                } else if (\local_o365\feature\usergroups\utils::course_is_group_enabled($courseid)) {
+                    if ($groupsyncenabled) {
+                        $coursegroups->update_group_name($courseid);
+                    }
+                }
+            }
+
+            // Update sharepoint sites.
+            $shortname = $eventdata['other']['shortname'];
+            $fullname = $eventdata['other']['fullname'];
+            if (\local_o365\rest\sharepoint::is_configured() === true) {
+                $sharepoint = static::construct_sharepoint_api_with_system_user();
+                if (!empty($sharepoint)) {
+                    $sharepoint->update_course_site($courseid, $shortname, $fullname);
+                }
             }
         }
     }
@@ -922,8 +1003,8 @@ class observers {
         }
 
         if ($user->auth != 'oidc') {
-            // recipient user is not office 365 user, exit.
-            debugging('SKIPPED: handle_notification_sent - recipient user is not office 365 user', DEBUG_DEVELOPER);
+            // recipient user is not Microsoft 365 user, exit.
+            debugging('SKIPPED: handle_notification_sent - recipient user is not Microsoft 365 user', DEBUG_DEVELOPER);
             return true;
         }
 
@@ -993,34 +1074,6 @@ class observers {
     }
 
     /**
-     * Log out user from Office 365 if the user is using auth_oidc.
-     *
-     * @param \core\event\user_loggedout $event
-     *
-     * @return bool
-     */
-    public static function handle_user_loggedout(\core\event\user_loggedout $event) {
-        global $CFG;
-
-        $singlesignoffsetting = get_config('local_o365', 'single_sign_off');
-
-        if ($singlesignoffsetting) {
-            $eventdata = $event->get_data();
-
-            $user = \core_user::get_user($eventdata['userid']);
-
-            if ($user && $user->auth == 'oidc') {
-                $ssologouturl = 'https://login.microsoftonline.com/common/oauth2/logout?post_logout_redirect_uri=' .
-                    urlencode($CFG->wwwroot);
-
-                redirect($ssologouturl);
-            }
-        }
-
-        return true;
-    }
-
-    /**
      * If "clientid" value of "auth_oidc" is changed, clear all tokens reported to user.
      *
      * @param \core\event\config_log_created $event
@@ -1044,6 +1097,13 @@ class observers {
 
             // Clear user records in local_o365_objects table.
             $DB->delete_records('local_o365_objects', ['type' => 'user']);
+        }
+
+        if ($eventdata['other']['name'] == 'enableapponlyaccess' && $eventdata['other']['oldvalue'] == '0' &&
+            $eventdata['other']['value'] == '1') {
+            unset_config('systemtokens', 'local_o365');
+
+            purge_all_caches();
         }
 
         return true;

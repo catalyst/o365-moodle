@@ -77,11 +77,11 @@ abstract class o365api {
     public static function instance_for_user($userid = null) {
         $httpclient = new \local_o365\httpclient();
         $clientdata = \local_o365\oauth2\clientdata::instance_from_oidc();
-        $resource = static::get_resource();
+        $tokenresource = static::get_tokenresource();
         if (!empty($userid)) {
-            $token = \local_o365\oauth2\token::instance($userid, $resource, $clientdata, $httpclient);
+            $token = \local_o365\oauth2\token::instance($userid, $tokenresource, $clientdata, $httpclient);
         } else {
-            $token = \local_o365\utils::get_app_or_system_token($resource, $clientdata, $httpclient);
+            $token = \local_o365\utils::get_app_or_system_token($tokenresource, $clientdata, $httpclient);
         }
         if (!empty($token)) {
             return new static($token, $httpclient);
@@ -95,7 +95,7 @@ abstract class o365api {
      *
      * @return string The resource for oauth2 tokens.
      */
-    public static function get_resource() {
+    public static function get_tokenresource() {
         throw new \moodle_exception('erroro365apinotimplemented', 'local_o365');
     }
 
@@ -343,24 +343,40 @@ abstract class o365api {
                 'appId' => '00000003-0000-0000-c000-000000000000',
                 'displayName' => '',
                 'requiredAppPermissions' => [
-                    'Files.ReadWrite.All' => [],
-                    'User.ReadWrite.All' => [],
+                    'Directory.ReadWrite.All' => [],
                     'Directory.Read.All' => [],
                     'Group.ReadWrite.All' => [],
+                    'User.Read.All' => ['User.ReadWrite.All'],
+                    'Files.ReadWrite.All' => [],
                     'Calendars.ReadWrite' => [],
-                    'Notes.ReadWrite.All' => [],
-                    'Domain.ReadWrite.All' => [],
-                 ],
-                'requiredDelegatedPermissions' => [
-                    'openid' => [],
-                    'Calendars.ReadWrite' => [],
-                    'Directory.AccessAsUser.All' => [],
-                    'Directory.ReadWrite.All' => [],
-                    'Files.ReadWrite' => [],
-                    'Notes.ReadWrite.All' => [],
-                    'User.ReadWrite.All' => [],
-                    'Group.ReadWrite.All' => [],
                     'Sites.Read.All' => [],
+                    'Notes.ReadWrite.All' => [],
+                    'AppRoleAssignment.ReadWrite.All' => [],
+                    'MailboxSettings.Read' => ['MailboxSettings.ReadWrite'],
+                 ],
+                'requiredDelegatedPermissionsUsingAppPermissions' => [
+                    'User.Read' => [],
+                    'openid' => [],
+                    'offline_access' => [],
+                    'email' => [],
+                    'profile' => [],
+                ],
+                'requiredDelegatedPermissions' => [
+                    'Directory.ReadWrite.All' => [],
+                    'Directory.Read.All' => [],
+                    'Group.ReadWrite.All' => [],
+                    'User.Read.All' => [],
+                    'Files.ReadWrite.All' => [],
+                    'Calendars.ReadWrite' => [],
+                    'Sites.Read.All' => [],
+                    'Notes.ReadWrite.All' => [],
+                    'AppRoleAssignment.ReadWrite.All' => [],
+                    'MailboxSettings.Read' => ['MailboxSettings.ReadWrite'],
+                    'User.Read' => ['User.ReadWrite.All'],
+                    'openid' => [],
+                    'offline_access' => [],
+                    'email' => [],
+                    'profile' => [],
                 ],
             ],
             'azure' => [

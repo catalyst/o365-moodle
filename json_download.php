@@ -15,10 +15,10 @@
 // along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
 
 /**
- * This page logs in user using SSO.
+ * This page creates JSON for deployment.
  *
  * @package local_o365
- * @author Lai Wei <lai.wei@enovation.ie>
+ * @author Andrius Vegys <andrius.vegys@enovation.ie>
  * @license http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  * @copyright (C) 2018 onwards Microsoft, Inc. (http://microsoft.com/)
  */
@@ -26,30 +26,12 @@
 require_once(__DIR__ . '/../../config.php');
 require_once($CFG->dirroot . '/local/o365/lib.php');
 
-$url = new moodle_url('/local/o365/sso_login.php');
+require_admin();
+require_sesskey();
 
-$PAGE->set_context(context_system::instance());
+$json = local_o365_create_deploy_json();
 
-$authtoken = local_o365_get_auth_token();
+header('Content-disposition: attachment; filename=jsondeploy.json');
+header('Content-type: application/json');
 
-list($headerEncoded, $payloadEncoded, $signatureEncoded) = explode('.', $authtoken);
-
-$payload = json_decode(local_o365_base64UrlDecode($payloadEncoded));
-
-$loginsuccess = false;
-if ($authoidctoken = $DB->get_record('auth_oidc_token', ['oidcusername' => $payload->upn])) {
-    if ($user = core_user::get_user($authoidctoken->userid)) {
-        $_POST['code'] = $authoidctoken->authcode;
-        $user = authenticate_user_login($user->username, $user->password, true);
-        if ($user) {
-            complete_user_login($user);
-            $loginsuccess = true;
-        }
-    }
-}
-
-if ($loginsuccess) {
-    http_response_code(200);
-} else {
-    http_response_code(401);
-}
+echo( $json);

@@ -309,7 +309,7 @@ class utils {
     }
 
     /**
-     * Return image tag to display office 365 group picture.
+     * Return image tag to display Microsoft 365 group picture.
      *
      * @param object $o365group Course group record.
      * @param string $image File name to use for image, ie f1.png, f2.png.
@@ -498,8 +498,8 @@ class utils {
         $httpclient = new \local_o365\httpclient();
         $clientdata = \local_o365\oauth2\clientdata::instance_from_oidc();
 
-        $unifiedresource = \local_o365\rest\unified::get_resource();
-        $unifiedtoken = \local_o365\utils::get_app_or_system_token($unifiedresource, $clientdata, $httpclient);
+        $tokenresource = \local_o365\rest\unified::get_tokenresource();
+        $unifiedtoken = \local_o365\utils::get_app_or_system_token($tokenresource, $clientdata, $httpclient);
         if (empty($unifiedtoken)) {
             return false;
         }
@@ -534,20 +534,14 @@ class utils {
     }
 
     /**
-     * Get urls for Moodle group from cache or by api call.
+     * Get urls for Moodle group by api call.
      *
-     * @param object $cache Moodle cache.
-     * @param int $courseid Moodle Course id.
-     * @param int $groupid Moodle Group id.
-     * @return array Array containing o365 url data.
+     * @param $courseid
+     * @param $groupid
+     *
+     * @return string[]|null
      */
-    public static function get_group_urls($cache, $courseid, $groupid) {
-        $groupscache = $cache->get($courseid.'_'.$groupid);
-
-        if (!empty($groupscache)) {
-            return $groupscache;
-        }
-
+    public static function get_group_urls($courseid, $groupid) {
         $group = new \stdClass();
         $group->groupid = $groupid;
         $group->courseid = $courseid;
@@ -558,18 +552,15 @@ class utils {
         try {
             $graphapi = static::get_graphclient();
             $urls = $graphapi->get_group_urls($object->objectid);
-            $groupscache = [
-                'object' => (array)$object,
-                'urls' => $urls,
-            ];
             if (!empty($urls)) {
-                // Set cache when urls are successfully generated.
-                $cache->set($courseid.'_'.$groupid, $groupscache);
+                return $urls;
+            } else {
+                return null;
             }
-            return $groupscache;
         } catch (\Exception $e) {
             $caller = 'groupcp.php';
-            \local_o365\utils::debug('Exception while retrieving group urls: groupid '.$object->objectid.' '.$e->getMessage(), $caller);
+            \local_o365\utils::debug('Exception while retrieving group urls: groupid ' . $object->objectid . ' ' .
+                $e->getMessage(), $caller);
             return null;
         }
     }
@@ -605,29 +596,35 @@ class utils {
      *
      * @param int $courseid The ID of the course.
      * @param bool $enabled Whether to enable or disable.
+     * @param bool $allfeatures Whether to enable all features, or just teams.
      */
-    public static function set_course_group_enabled($courseid, $enabled = true) {
+    public static function set_course_group_enabled($courseid, $enabled = true, $allfeatures = false) {
         $usergroupconfig = get_config('local_o365', 'usergroupcustom');
         $usergroupconfig = @json_decode($usergroupconfig, true);
         if (empty($usergroupconfig) || !is_array($usergroupconfig)) {
             $usergroupconfig = [];
         }
+
         if ($enabled === true) {
             $usergroupconfig[$courseid] = $enabled;
-            static::set_course_group_feature_enabled($courseid, ['team'],
-                $enabled);
         } else {
             if (isset($usergroupconfig[$courseid])) {
                 unset($usergroupconfig[$courseid]);
                 static::delete_course_group($courseid);
             }
-            static::set_course_group_feature_enabled($courseid, ['team'],
-                $enabled);
         }
+
+        $features = ['team'];
+        if ($allfeatures) {
+            static::set_course_group_feature_enabled($courseid, $features, $enabled);
+        } else {
+            static::set_course_group_feature_enabled($courseid, ['team'], $enabled);
+        }
+
         set_config('usergroupcustom', json_encode($usergroupconfig), 'local_o365');
     }
 
-   /**
+    /**
      * Determine whether a group feature is enabled or disabled.
      *
      * @param int $courseid The ID of the course.
@@ -655,6 +652,8 @@ class utils {
      * @param bool $enabled Whether to enable or disable.
      */
     public static function set_course_group_feature_enabled($courseid, array $features, $enabled = true) {
+        global $DB;
+
         $usergroupconfig = get_config('local_o365', 'usergroupcustomfeatures');
         $usergroupconfig = @json_decode($usergroupconfig, true);
         if (empty($usergroupconfig) || !is_array($usergroupconfig)) {
@@ -671,6 +670,10 @@ class utils {
             foreach ($features as $feature) {
                 if (isset($usergroupconfig[$courseid][$feature])) {
                     unset($usergroupconfig[$courseid][$feature]);
+                }
+                if ($feature == 'team') {
+                    $DB->delete_records('local_o365_objects',
+                        ['type' => 'group', 'subtype' => 'courseteam', 'moodleid' => $courseid]);
                 }
             }
         }
@@ -709,5 +712,306 @@ class utils {
             }
         }
         set_config('usergroupcustomfeatures', json_encode($usergroupconfig), 'local_o365');
+    }
+
+    /**
+     * Return a list of unmatched teams, which can be used as connecting options.
+     *
+     * @param null $currentoid
+     *
+     * @return array
+     */
+    public static function get_teams_options($currentoid = null) {
+        global $DB;
+
+        $teamsoptions = [];
+        $teamnamecache = [];
+        $matchedid = 0;
+
+        $matchedoids = $DB->get_fieldset_select('local_o365_objects', 'objectid', 'type = ? AND subtype = ?', ['group', 'course']);
+
+        $teamcacherecords = $DB->get_records('local_o365_teams_cache');
+        foreach ($teamcacherecords as $key => $teamcacherecord) {
+            if ($teamcacherecord->objectid == $currentoid || !in_array($teamcacherecord->objectid, $matchedoids)) {
+                if (!array_key_exists($teamcacherecord->name, $teamnamecache)) {
+                    $teamnamecache[$teamcacherecord->name] = [];
+                }
+                $teamnamecache[$teamcacherecord->name][] = $teamcacherecord->objectid;
+            } else {
+                unset($teamcacherecords[$key]);
+            }
+        }
+
+        foreach ($teamcacherecords as $teamcacherecord) {
+            $teamoidpart = '';
+            if (count($teamnamecache[$teamcacherecord->name]) > 1) {
+                $teamoidpart = ' [' . $teamcacherecord->objectid . '] ';
+            }
+            if ($teamcacherecord->objectid == $currentoid) {
+                $teamsoptions[$teamcacherecord->id] = $teamcacherecord->name . $teamoidpart . ' - ' .
+                    get_string('acp_teamconnections_current_connection', 'local_o365');
+                $matchedid = $teamcacherecord->id;
+            } else {
+                $teamsoptions[$teamcacherecord->id] = $teamcacherecord->name . $teamoidpart;
+            }
+        }
+
+        natcasesort($teamsoptions);
+
+        if (!$currentoid) {
+            $teamsoptions = ['0' => get_string('acp_teamconnections_not_connected', 'local_o365')] + $teamsoptions;
+        }
+
+        return [$teamsoptions, $matchedid];
+    }
+
+    /**
+     * Return the display name of Team for the given course according to configuration.
+     *
+     * @param \stdClass $course
+     * @param string $forcedprefix
+     *
+     * @return string
+     */
+    public static function get_team_display_name(\stdClass $course, string $forcedprefix = '') {
+        if ($forcedprefix) {
+            $teamdisplayname = $forcedprefix;
+        } else {
+            $teamdisplayname = '';
+        }
+
+        $teamnameprefix = get_config('local_o365', 'team_name_prefix');
+        if ($teamnameprefix) {
+            $teamdisplayname .= $teamnameprefix;
+        }
+
+        $teamnamecourse = get_config('local_o365', 'team_name_course');
+        switch ($teamnamecourse) {
+            case coursegroups::NAME_OPTION_FULL_NAME:
+                $teamdisplayname .= $course->fullname;
+                break;
+            case coursegroups::NAME_OPTION_SHORT_NAME:
+                $teamdisplayname .= $course->shortname;
+                break;
+            case coursegroups::NAME_OPTION_ID:
+                $teamdisplayname .= $course->id;
+                break;
+            case coursegroups::NAME_OPTION_ID_NUMBER:
+                $teamdisplayname .= $course->idnumber;
+                break;
+            default:
+                $teamdisplayname .= $course->fullname;
+        }
+
+        $teamnamesuffix = get_config('local_o365', 'team_name_suffix');
+        if ($teamnamesuffix) {
+            $teamdisplayname .= $teamnamesuffix;
+        }
+
+        return substr($teamdisplayname, 0, 256);
+    }
+
+    /**
+     * Return the team display name to be used on the sample course according to the current settings.
+     *
+     * @return string
+     */
+    public static function get_sample_team_display_name() {
+        $teamgroupamesamplecourse = static::get_team_group_name_sample_course();
+
+        return static::get_team_display_name($teamgroupamesamplecourse);
+    }
+
+    /**
+     * Return the display name of group for the given course according to configuration.
+     *
+     * @param \stdClass $course
+     * @param \stdClass|null $group
+     * @param string $forcedprefix
+     *
+     * @return string
+     */
+    public static function get_group_display_name(\stdClass $course, \stdClass $group = null, $forcedprefix = '') {
+        if ($forcedprefix) {
+            $groupdisplayname = $forcedprefix;
+        } else {
+            $groupdisplayname = '';
+        }
+
+        $groupdisplaynameprefix = get_config('local_o365', 'group_display_name_prefix');
+        if ($groupdisplaynameprefix) {
+            $groupdisplayname .= $groupdisplaynameprefix;
+        }
+
+        $groupdisplaynamecourse = get_config('local_o365', 'group_display_name_course');
+        switch ($groupdisplaynamecourse) {
+            case coursegroups::NAME_OPTION_FULL_NAME:
+                $groupdisplayname .= $course->fullname;
+                break;
+            case coursegroups::NAME_OPTION_SHORT_NAME:
+                $groupdisplayname .= $course->shortname;
+                break;
+            case coursegroups::NAME_OPTION_ID:
+                $groupdisplayname .= $course->id;
+                break;
+            case coursegroups::NAME_OPTION_ID_NUMBER:
+                $groupdisplayname .= $course->idnumber;
+                break;
+            default:
+                $groupdisplayname .= $course->fullname;
+        }
+
+        if ($group) {
+            $groupdisplayname .= $group->name;
+        }
+
+        $groupdisplaynamesuffix = get_config('local_o365', 'group_display_name_suffix');
+        if ($groupdisplaynamesuffix) {
+            $groupdisplayname .= $groupdisplaynamesuffix;
+        }
+
+        return substr($groupdisplayname, 0, 264);
+    }
+
+    /**
+     * Return the email alias of group for the given course according to configuration.
+     *
+     * @param \stdClass $course
+     * @param \stdClass|null $group
+     *
+     * @return string
+     */
+    public static function get_group_mail_alias(\stdClass $course, \stdClass $group = null) {
+        $groupmailaliasprefix = get_config('local_o365', 'group_mail_alias_prefix');
+        if ($groupmailaliasprefix) {
+            $groupmailaliasprefix = static::clean_up_group_mail_alias($groupmailaliasprefix);
+        }
+
+        $groupmailaliassuffix = get_config('local_o365', 'group_mail_alias_suffix');
+        if ($groupmailaliassuffix) {
+            $groupmailaliassuffix = static::clean_up_group_mail_alias($groupmailaliassuffix);
+        }
+
+        $groupmailaliascourse = get_config('local_o365', 'group_mail_alias_course');
+        switch ($groupmailaliascourse) {
+            case coursegroups::NAME_OPTION_FULL_NAME:
+                $coursepart = $course->fullname;
+                break;
+            case coursegroups::NAME_OPTION_SHORT_NAME:
+                $coursepart = $course->shortname;
+                break;
+            case coursegroups::NAME_OPTION_ID:
+                $coursepart = $course->id;
+                break;
+            case coursegroups::NAME_OPTION_ID_NUMBER:
+                $coursepart = $course->idnumber;
+                break;
+            default:
+                $coursepart = $course->shortname;
+        }
+
+        if ($group) {
+            $grouppart = $group->id . '_' . $group->name;
+            $grouppart = static::clean_up_group_mail_alias($grouppart);
+            if (strlen($grouppart) > 16) {
+                $grouppart = substr($grouppart, 0, 16);
+            }
+            $grouppart = '-' . $grouppart;
+        } else {
+            $grouppart = '';
+        }
+
+        $coursepart = static::clean_up_group_mail_alias($coursepart);
+
+        $coursepartmaxlength = 64 - strlen($groupmailaliasprefix) - strlen($groupmailaliassuffix) - strlen($grouppart);
+        if (strlen($coursepart) > $coursepartmaxlength) {
+            $coursepart = substr($coursepart, 0, $coursepartmaxlength);
+        }
+
+        return $groupmailaliasprefix . $coursepart . $grouppart . $groupmailaliassuffix;
+    }
+
+    /**
+     * Remove unsupported characters from the mail alias parts, and return the result.
+     *
+     * @param string $mailalias
+     *
+     * @return string|string[]|null
+     */
+    public static function clean_up_group_mail_alias($mailalias) {
+        return preg_replace('/[^a-z0-9-_]+/iu', '', $mailalias);
+    }
+
+    /**
+     * Return the display name and the mail alias of the group of the sample course.
+     *
+     * @return array
+     */
+    public static function get_sample_group_names() {
+        $samplegroupnames = [];
+
+        $samplecourse = static::get_team_group_name_sample_course();
+        $samplegroupnames['displayname'] = static::get_group_display_name($samplecourse);
+        $samplegroupnames['mailalias'] = static::get_group_mail_alias($samplecourse);
+
+        return $samplegroupnames;
+    }
+
+    /**
+     * Return a stdClass object representing a course object to be used for Team / group naming convention example.
+     *
+     * @return \stdClass
+     */
+    public static function get_team_group_name_sample_course() {
+        $samplecourse = new \stdClass();
+        $samplecourse->fullname = 'Sample course 15';
+        $samplecourse->shortname = 'sample 15';
+        $samplecourse->id = 2;
+        $samplecourse->idnumber = 'Sample ID 15';
+
+        return $samplecourse;
+    }
+
+    /**
+     * Return the list of o365_object IDs for the users with the given IDs.
+     *
+     * @param $userids
+     *
+     * @return array
+     */
+    public static function get_user_object_ids_by_user_ids($userids) {
+        global $DB;
+
+        if ($userids) {
+            list($idsql, $idparams) = $DB->get_in_or_equal($userids);
+            $sql = "SELECT objectid
+                  FROM {local_o365_objects}
+                 WHERE type = ?
+                   AND moodleid {$idsql}";
+            $params = array_merge(['user'], $idparams);
+            return $DB->get_fieldset_sql($sql, $params);
+        } else {
+            return [];
+        }
+    }
+
+    /**
+     * Helper function to retrieve study group object.
+     *
+     * @param int $groupid Id of Moodle group.
+     * @return object Object containing o365 object id.
+     */
+    public static function get_study_group_object($groupid) {
+        global $DB;
+        $params = [
+            'type' => 'group',
+            'subtype' => 'usergroup',
+            'moodleid' => $groupid
+        ];
+        $object = $DB->get_record('local_o365_objects', $params);
+        if (empty($object)) {
+            return false;
+        }
+        return $object;
     }
 }

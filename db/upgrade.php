@@ -15,8 +15,11 @@
 // along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
 
 /**
+ * Plugin upgrade script.
+ *
  * @package local_o365
  * @author James McQuillan <james.mcquillan@remote-learner.net>
+ * @author Lai Wei <lai.wei@enovation.ie>
  * @license http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  * @copyright (C) 2014 onwards Microsoft, Inc. (http://microsoft.com/)
  */
@@ -574,7 +577,7 @@ function xmldb_local_o365_upgrade($oldversion) {
     }
 
     if ($result && $oldversion < 2017111301) {
-        mtrace('Warning! This version removes the legacy Office 365 API. If you *absolutely* need it, add "$CFG->local_o365_forcelegacyapi = true;" to your config.php. This option will be removed in the next version.');
+        mtrace('Warning! This version removes the legacy Microsoft 365 API. If you *absolutely* need it, add "$CFG->local_o365_forcelegacyapi = true;" to your config.php. This option will be removed in the next version.');
         upgrade_plugin_savepoint($result, '2017111301', 'local', 'o365');
     }
 
@@ -610,46 +613,131 @@ function xmldb_local_o365_upgrade($oldversion) {
     }
 
     if ($result && $oldversion < 2020020302) {
-        if ($dbman->table_exists('auth_oidc_token')) {
-            $oldgraphtokens = $DB->get_records('auth_oidc_token', ['resource' => 'https://graph.windows.net']);
-            foreach ($oldgraphtokens as $graphtoken) {
-                $graphtoken->resource = 'https://graph.microsoft.com';
-                $DB->update_record('auth_oidc_token', $graphtoken);
-            }
-            $oidcresource = $DB->get_record('config_plugins', ['plugin' => 'auth_oidc', 'name' => 'oidcresource']);
-            if (strpos($oidcresource->value, 'windows') !== FALSE) {
-                $oidcresource->value = 'https://graph.microsoft.com';
-                $DB->update_record('config_plugins', $oidcresource);
-            }
-            $aadsyncsetting = $DB->get_record('config_plugins', ['plugin' => 'local_o365', 'name' => 'aadsync']);
-            if (strpos($aadsyncsetting->value, 'delete') === 0) {
-                $aadsyncsetting->value = substr($aadsyncsetting->value, 7);
-                $DB->update_record('config_plugins', $aadsyncsetting);
-            } else if (strpos($aadsyncsetting->value, 'nodelta') === 0) {
-                $aadsyncsetting->value = substr($aadsyncsetting->value, 8);
-                $DB->update_record('config_plugins', $aadsyncsetting);
+        $aadsyncsetting = get_config('local_o365', 'aadsync');
+        if ($aadsyncsetting !== false) {
+            if (strpos($aadsyncsetting, 'delete') === 0) {
+                set_config('aadsync', substr($aadsyncsetting, 7), 'local_o365');
+            } else if (strpos($aadsyncsetting, 'nodelta') === 0) {
+                set_config('aadsync', substr($aadsyncsetting, 8), 'local_o365');
             }
         }
-        upgrade_plugin_savepoint($result, '2020020302', 'local', 'o365');
+
+        upgrade_plugin_savepoint(true, 2020020302, 'local', 'o365');
     }
 
     if ($result && $oldversion < 2020071503) {
         $fieldmapsettings = get_config('local_o365', 'fieldmap');
-        $fieldmapsettings = unserialize($fieldmapsettings);
-        foreach ($fieldmapsettings as $key => $setting) {
-            $fieldmapsettings[$key] = str_replace('facsimileTelephoneNumber', 'faxNumber', $setting);
+        if ($fieldmapsettings !== false) {
+            $fieldmapsettings = unserialize($fieldmapsettings);
+            foreach ($fieldmapsettings as $key => $setting) {
+                $fieldmapsettings[$key] = str_replace('facsimileTelephoneNumber', 'faxNumber', $setting);
+            }
+            set_config('fieldmap', serialize($fieldmapsettings), 'local_o365');
         }
-        set_config('fieldmap', serialize($fieldmapsettings), 'local_o365');
 
-        upgrade_plugin_savepoint($result, '2020071503', 'local', 'o365');
+        upgrade_plugin_savepoint(true, 2020071503, 'local', 'o365');
     }
 
     if ($result && $oldversion < 2020071504) {
         // Delete delta token, purge cache.
-        $DB->delete_records('config_plugins', ['plugin' => 'local_o365', 'name' => 'task_usersync_lastdeltatoken']);
+        unset_config('task_usersync_lastdeltatoken', 'local_o365');
         purge_all_caches();
 
-        upgrade_plugin_savepoint($result, '2020071504', 'local', 'o365');
+        upgrade_plugin_savepoint(true, 2020071504, 'local', 'o365');
+    }
+
+    if ($result && $oldversion < 2020071506) {
+        // Part 1: create local_o365_teams_cache table.
+        if (!$dbman->table_exists('local_o365_teams_cache')) {
+            // Define table local_o365_teams_cache to be created.
+            $table = new xmldb_table('local_o365_teams_cache');
+
+            // Adding fields to table local_o365_teams_cache.
+            $table->add_field('id', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, XMLDB_SEQUENCE, null);
+            $table->add_field('objectid', XMLDB_TYPE_CHAR, '255', null, XMLDB_NOTNULL, null, null);
+            $table->add_field('name', XMLDB_TYPE_CHAR, '255', null, null, null, null);
+            $table->add_field('description', XMLDB_TYPE_TEXT, null, null, null, null, null);
+            $table->add_field('url', XMLDB_TYPE_TEXT, null, null, null, null, null);
+
+            // Adding keys to table local_o365_teams_cache.
+            $table->add_key('primary', XMLDB_KEY_PRIMARY, ['id']);
+
+            // Conditionally launch create table for local_o365_teams_cache.
+            if (!$dbman->table_exists($table)) {
+                $dbman->create_table($table);
+            }
+        }
+
+        // Part 2: rename resource field.
+        if ($dbman->field_exists('local_o365_token', 'resource')) {
+            $table = new xmldb_table('local_o365_token');
+
+            // Define index usrresscp (not unique) to be dropped form local_o365_token.
+            $index = new xmldb_index('usrresscp', XMLDB_INDEX_NOTUNIQUE, ['user_id', 'resource']);
+
+            // Conditionally launch drop index usrresscp.
+            if ($dbman->index_exists($table, $index)) {
+                $dbman->drop_index($table, $index);
+            }
+
+            // Rename field resource on table local_o365_token to tokenresource.
+            $field = new xmldb_field('resource', XMLDB_TYPE_CHAR, '127', null, XMLDB_NOTNULL, null, null, 'scope');
+
+            // Launch rename field resource.
+            $dbman->rename_field($table, $field, 'tokenresource');
+
+            // Define index usrresscp (not unique) to be added to local_o365_token.
+            $index = new xmldb_index('usrresscp', XMLDB_INDEX_NOTUNIQUE, ['user_id', 'tokenresource']);
+
+            // Conditionally launch add index usrresscp.
+            if (!$dbman->index_exists($table, $index)) {
+                $dbman->add_index($table, $index);
+            }
+        }
+
+        // Update apptokens config.
+        $apptokensconfig = get_config('local_o365', 'apptokens');
+        if ($apptokensconfig !== false) {
+            $apptokensconfig = unserialize($apptokensconfig);
+            foreach ($apptokensconfig as $resource => $tokenconfig) {
+                if (array_key_exists('resource', $tokenconfig)) {
+                    $apptokensconfig[$resource]['tokenresource'] = $tokenconfig['resource'];
+                    unset($apptokensconfig[$resource]['resource']);
+                }
+            }
+            $apptokensconfig = serialize($apptokensconfig);
+            set_config('apptokens', $apptokensconfig, 'local_o365');
+        }
+
+        // Update systemtokens config.
+        $systemtokensconfig = get_config('local_o365', 'systemtokens');
+        if ($systemtokensconfig !== false) {
+            $systemtokensconfig = unserialize($systemtokensconfig);
+            foreach ($systemtokensconfig as $resource => $tokenconfig) {
+                if (array_key_exists('resource', $tokenconfig)) {
+                    $systemtokensconfig[$resource]['tokenresource'] = $tokenconfig['resource'];
+                    unset($systemtokensconfig[$resource]['resource']);
+                }
+            }
+            $systemtokensconfig = serialize($systemtokensconfig);
+            set_config('systemtokens', $systemtokensconfig, 'local_o365');
+        }
+
+        // O365 savepoint reached.
+        upgrade_plugin_savepoint(true, 2020071506, 'local', 'o365');
+    }
+
+    if ($result && $oldversion < 2020071507) {
+        // Update aadsync settings to replace 'delete' with 'suspend'.
+        $aadsyncsetting = get_config('local_o365', 'aadsync');
+        set_config('aadsync', str_replace('delete', 'suspend', $aadsyncsetting), 'local_o365');
+
+        // Force clear user sync delta token.
+        unset_config('local_o365', 'task_usersync_lastdeltatoken');
+        purge_all_caches();
+
+        // O365 savepoint reached.
+        upgrade_plugin_savepoint(true, 2020071507, 'local', 'o365');
     }
 
     return $result;

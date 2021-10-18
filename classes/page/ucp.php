@@ -60,7 +60,7 @@ class ucp extends base {
             throw new \moodle_exception('ucp_notconnected', 'local_o365');
         }
 
-        $outlookresource = \local_o365\rest\calendar::get_resource();
+        $outlookresource = \local_o365\rest\calendar::get_tokenresource();
         $unifiedconfigured = \local_o365\rest\unified::is_configured();
         if (empty($outlookresource) && empty($unifiedconfigured)) {
             throw new \Exception('Not configured');
@@ -261,7 +261,7 @@ class ucp extends base {
     }
 
     /**
-     * Office 365 connection management page.
+     * Microsoft 365 connection management page.
      */
     public function mode_connection() {
         global $OUTPUT, $USER, $PAGE, $CFG;

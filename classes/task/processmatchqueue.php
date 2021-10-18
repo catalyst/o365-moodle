@@ -46,14 +46,14 @@ class processmatchqueue extends \core\task\scheduled_task {
     public function get_api() {
         $unifiedconfigured = \local_o365\rest\unified::is_configured();
         if ($unifiedconfigured === true) {
-            $resource = \local_o365\rest\unified::get_resource();
+            $tokenresource = \local_o365\rest\unified::get_tokenresource();
         } else {
-            $resource = \local_o365\rest\azuread::get_resource();
+            $tokenresource = \local_o365\rest\azuread::get_tokenresource();
         }
 
         $clientdata = \local_o365\oauth2\clientdata::instance_from_oidc();
         $httpclient = new \local_o365\httpclient();
-        $token = \local_o365\utils::get_app_or_system_token($resource, $clientdata, $httpclient);
+        $token = \local_o365\utils::get_app_or_system_token($tokenresource, $clientdata, $httpclient);
         if (empty($token)) {
             throw new \Exception('No token available for system user. Please run local_o365 health check.');
         }
@@ -131,7 +131,7 @@ class processmatchqueue extends \core\task\scheduled_task {
                     continue;
                 }
 
-                // Check existing matches for Office user.
+                // Check existing matches for Microsoft 365 user.
                 if (!empty($matchrec->officeuserexistingconnectionid)) {
                     $updatedrec = new \stdClass;
                     $updatedrec->id = $matchrec->id;
@@ -142,7 +142,7 @@ class processmatchqueue extends \core\task\scheduled_task {
                     continue;
                 }
 
-                // Check existing tokens for Office 365 user (indicates o365 user is already connected to someone).
+                // Check existing tokens for Microsoft 365 user (indicates o365 user is already connected to someone).
                 if (!empty($matchrec->officeuserexistingoidctoken)) {
                     $updatedrec = new \stdClass;
                     $updatedrec->id = $matchrec->id;
