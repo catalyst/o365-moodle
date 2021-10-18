@@ -493,7 +493,7 @@ class main {
             $objectidfieldname = 'objectId';
             $userobjectid = $aaddata['objectId'];
         }
-        $usersync = new \local_o365\feature\usersync\main();
+
         foreach ($fieldmaps as $fieldmap) {
             $fieldmap = explode('/', $fieldmap);
             if (count($fieldmap) !== 3) {
@@ -524,9 +524,9 @@ class main {
             }
 
             if ($remotefield == "manager") {
-                $user->$localfield = $usersync->get_user_manager($userobjectid);
+                $user->$localfield = $this->get_user_manager($userobjectid);
             } else if ($remotefield == "groups") {
-                $user->$localfield = $usersync->get_user_groups($userobjectid);
+                $user->$localfield = $this->get_user_groups($userobjectid);
             } else if ($remotefield == "teams") {
                 $user->$localfield = $usersync->get_user_teams($userobjectid);
             } else if ($remotefield == "roles") {
@@ -548,6 +548,10 @@ class main {
             }
         }
 
+        if (isset($aaddata['aad.isDeleted']) && $aaddata['aad.isDeleted']) {
+            $user->deleted = $aaddata['aad.isDeleted'];
+            $user->suspended = $aaddata['aad.isDeleted'];
+        }
         // Lang cannot be longer than 2 chars.
         if (!empty($user->lang) && strlen($user->lang) > 2) {
             $user->lang = substr($user->lang, 0, 2);

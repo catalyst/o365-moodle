@@ -1878,6 +1878,7 @@ class acp extends base {
     }
 
     /**
+
      * Clean up user sync delta token.
      */
     public function mode_maintenance_cleandeltatoken() {

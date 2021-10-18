@@ -530,6 +530,7 @@ class coursegroups {
         if (!empty($currentowners)) {
             $toaddowners = array_diff($intendedteamowners, $currentowners);
             $toremoveowners = array_diff($currentowners, $intendedteamowners);
+
         } else {
             $toaddowners = $intendedteamowners;
             $toremoveowners = [];
@@ -666,6 +667,7 @@ class coursegroups {
      * @param $objectid
      *
      * @return array
+
      */
     public function get_group_members($objectid) {
         $groupmembers = [];
