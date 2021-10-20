@@ -987,3 +987,6 @@ $string['tab_moodle'] = 'Moodle';
 $string['sso_login'] = 'Login to Microsoft 365';
 $string['other_login'] = 'Login manually';
 $string['course_selector_label'] = "Select existing course";
+
+// Cache
+$string['cachedef_groups'] = 'Stores Office 365 group data.';
