@@ -785,6 +785,8 @@ $string['privacy:metadata:local_o365_calsettings:user_id'] = 'The ID of the Mood
 $string['privacy:metadata:local_o365_calsettings:o365calid'] = 'The ID of the calendar in Microsoft 365';
 $string['privacy:metadata:local_o365_calsettings:timecreated'] = 'The time the record was created.';
 
+$string['spsite_group_contributors_desc'] = 'All users who have access to manage files for course {$a}';
+
 // "Microsoft 365 / Moodle Control Panel" page in the Microsoft block.
 $string['ucp_title'] = 'Microsoft 365 / Moodle Control Panel';
 $string['ucp_general_intro'] = 'Here you can manage your connection to Microsoft 365.';
