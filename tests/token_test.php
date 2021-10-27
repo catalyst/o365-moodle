@@ -55,7 +55,7 @@ class local_o365_oauth2_token_testcase extends \advanced_testcase {
             'expires_on' => $now + 1000,
             'refresh_token' => 'newrefreshtoken',
             'scope' => 'newscope',
-            'tokenresource' => 'newresource',
+            'resource' => 'newresource',
         ];
         $newtokenresponse = json_encode($newtokenresponse);
         $httpclient->set_response($newtokenresponse);
