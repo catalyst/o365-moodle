@@ -71,6 +71,8 @@ $string['settings_systemapiuser_change'] = 'Change user';
 $string['settings_systemapiuser_usernotset'] = 'No user set.';
 $string['settings_systemapiuser_userset'] = '{$a}';
 $string['settings_systemapiuser_setuser'] = 'Set User';
+$string['spsite_group_contributors_name'] = '{$a} Contributors';
+$string['spsite_group_contributors_desc'] = 'All users who have access to manage files for course {$a}';
 
 // Settings in "Step 3/3" section of the "Setup" tab.
 $string['settings_adminconsent'] = 'Admin Consent';
