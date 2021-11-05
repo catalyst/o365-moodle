@@ -89,6 +89,7 @@ class usersync extends scheduled_task {
             return true;
         }
         $this->mtrace('Starting sync');
+        raise_memory_limit(MEMORY_HUGE);
 
         $usersync = new main();
 
@@ -229,7 +230,7 @@ class usersync extends scheduled_task {
                 }
                 if (main::sync_option_enabled('reenable')) {
                     $this->mtrace('Re-enabling suspended users...');
-                    $usersync->reenable_suspsend_users($users);
+                    $usersync->reenable_suspsend_users($users, main::sync_option_enabled('disabledsync'));
                 }
             }
         }
@@ -240,13 +241,13 @@ class usersync extends scheduled_task {
     }
 
     /**
-     * Process users in chunks of 20000 at a time.
+     * Process users in chunks of 10000 at a time.
      *
      * @param $usersync
      * @param $users
      */
     protected function sync_users($usersync, $users) {
-        $chunk = array_chunk($users, 20000);
+        $chunk = array_chunk($users, 10000);
         foreach ($chunk as $u) {
             $this->mtrace(count($u) . ' users in chunk. Syncing...');
             $usersync->sync_users($u);
