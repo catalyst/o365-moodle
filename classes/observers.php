@@ -527,6 +527,11 @@ class observers {
         global $DB;
         $requiredcap = \local_o365\rest\sharepoint::get_course_site_required_capability();
 
+        // Ensure sharepoint is actually enabled.
+        if (\local_o365\rest\sharepoint::is_configured() !== true) {
+            return false;
+        }
+
         // Check if the role affected the required capability.
         $rolecapsql = "SELECT *
                          FROM {role_capabilities}
