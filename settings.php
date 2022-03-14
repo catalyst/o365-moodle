@@ -448,7 +448,10 @@ if ($hassiteconfig) {
         $desc .= new lang_string('settings_sds_intro_desc', 'local_o365', $scheduledtasks->out());
         $settings->add(new admin_setting_heading('local_o365_sds_intro', '', $desc));
 
-        $apiclient = \local_o365\feature\sds\utils::get_apiclient();
+        $apiclient = null;
+        if (!PHPUNIT_TEST) {
+            $apiclient = \local_o365\feature\sds\utils::get_apiclient();
+        }
 
         $schools = [];
 
