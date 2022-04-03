@@ -448,7 +448,15 @@ if ($hassiteconfig) {
         $desc .= new lang_string('settings_sds_intro_desc', 'local_o365', $scheduledtasks->out());
         $settings->add(new admin_setting_heading('local_o365_sds_intro', '', $desc));
 
-        $apiclient = \local_o365\feature\sds\utils::get_apiclient();
+        try {
+            $apiclient = \local_o365\feature\sds\utils::get_apiclient();
+        } catch (\Exception $e) {
+            $apiclient = null;
+
+            // SDS no school notification.
+            $desc = new lang_string('settings_sds_noschools', 'local_o365');
+            $settings->add(new admin_setting_heading('local_o365_sds_noschools', '', $desc));
+        }
 
         $schools = [];
 
