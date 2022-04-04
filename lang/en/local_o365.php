@@ -941,3 +941,5 @@ $string['course_selector_label'] = "Select existing course";
 
 // Misc.
 $string['spsite_group_contributors_desc'] = 'All users who have access to manage files for course {$a}';
+
+$string['cachedef_groups'] = 'Caches Microsoft 365 group information.';
