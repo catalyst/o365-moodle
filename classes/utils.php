@@ -19,97 +19,111 @@
  *
  * @package local_o365
  * @author James McQuillan <james.mcquillan@remote-learner.net>
+ * @author Lai Wei <lai.wei@noevation.ie>
  * @license http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  * @copyright (C) 2014 onwards Microsoft, Inc. (http://microsoft.com/)
  */
 
 namespace local_o365;
 
+use auth_oidc\jwt;
+use Exception;
+use local_o365\event\api_call_failed;
+use local_o365\oauth2\apptoken;
+use local_o365\oauth2\clientdata;
+use local_o365\oauth2\systemapiusertoken;
+use local_o365\oauth2\token;
+use local_o365\obj\o365user;
+use local_o365\rest\unified;
+
 defined('MOODLE_INTERNAL') || die();
+
+require_once($CFG->dirroot . '/auth/oidc/lib.php');
 
 /**
  * General purpose utility class.
  */
 class utils {
     /**
-     * Determine whether the plugins are configured.
-     *
-     * Determines whether essential configuration has been completed.
+     * Determine whether essential configuration has been completed.
      *
      * @return bool Whether the plugins are configured.
      */
     public static function is_configured() {
-        $cfg = get_config('auth_oidc');
-        if (empty($cfg) || !is_object($cfg)) {
-            return false;
-        }
-        if (empty($cfg->clientid) || empty($cfg->clientsecret) || empty($cfg->authendpoint) || empty($cfg->tokenendpoint)) {
-            return false;
-        }
-        return true;
+        return auth_oidc_is_setup_complete();
     }
 
     /**
-     * Determine whether the local_msaccount plugin is configured.
+     * Check if the Moodle site is connected to Microsoft 365 services using the integration.
      *
-     * @return bool Whether the plugins are configured.
+     * @return bool
      */
-    public static function is_configured_msaccount() {
-        if (!class_exists('\local_msaccount\client')) {
-            return false;
+    public static function is_connected() {
+        if (static::is_configured()) {
+            $httpclient = new httpclient();
+            $clientdata = clientdata::instance_from_oidc();
+            $graphresource = unified::get_tokenresource();
+            try {
+                $token = utils::get_app_or_system_token($graphresource, $clientdata, $httpclient);
+                if ($token) {
+                    return true;
+                }
+            } catch (Exception $e) {
+                return false;
+            }
         }
-        $cfg = get_config('local_msaccount');
-        if (empty($cfg) || !is_object($cfg)) {
-            return false;
-        }
-        if (empty($cfg->clientid) || empty($cfg->clientsecret) || empty($cfg->authendpoint) || empty($cfg->tokenendpoint)) {
-            return false;
-        }
-        return true;
+
+        return false;
     }
 
     /**
      * Get an app token if available or fall back to system API user token.
      *
      * @param string $tokenresource The desired resource.
-     * @param \local_o365\oauth2\clientdata $clientdata Client credentials.
-     * @param \local_o365\httpclientinterface $httpclient An HTTP client.
+     * @param clientdata $clientdata Client credentials.
+     * @param httpclientinterface $httpclient An HTTP client.
      * @param bool $forcecreate
-     *
-     * @return \local_o365\oauth2\apptoken|\local_o365\oauth2\systemapiusertoken An app or system token.
+     * @param bool $throwexception
+     * @return apptoken|systemapiusertoken|null An app or system token.
+     * @throws Exception
      */
-    public static function get_app_or_system_token($tokenresource, $clientdata, $httpclient, $forcecreate = false) {
+    public static function get_app_or_system_token(string $tokenresource, clientdata $clientdata, httpclientinterface $httpclient,
+        bool $forcecreate = false, bool $throwexception = true) {
         $token = null;
         try {
             if (static::is_configured_apponlyaccess() === true) {
-                $token = \local_o365\oauth2\apptoken::instance(null, $tokenresource, $clientdata, $httpclient, $forcecreate);
+                $token = apptoken::instance(null, $tokenresource, $clientdata, $httpclient, $forcecreate);
             }
-        } catch (\Exception $e) {
-            static::debug($e->getMessage(), 'get_app_or_system_token (app)', $e);
+        } catch (Exception $e) {
+            static::debug($e->getMessage(), __METHOD__ . ' (app)', $e);
         }
 
         if (empty($token)) {
             try {
-                $token = \local_o365\oauth2\systemapiusertoken::instance(null, $tokenresource, $clientdata, $httpclient);
-            } catch (\Exception $e) {
-                static::debug($e->getMessage(), 'get_app_or_system_token (system)', $e);
+                $token = systemapiusertoken::instance(null, $tokenresource, $clientdata, $httpclient);
+            } catch (Exception $e) {
+                static::debug($e->getMessage(), __METHOD__ . ' (system)', $e);
             }
         }
 
         if (!empty($token)) {
             return $token;
         } else {
-            throw new \Exception('Could not get app or system token');
+            if ($throwexception) {
+                throw new Exception('Could not get app or system token');
+            } else {
+                return $token;
+            }
         }
     }
 
     /**
      * Get the tenant from an ID Token.
      *
-     * @param \auth_oidc\jwt $idtoken The ID token.
+     * @param jwt $idtoken The ID token.
      * @return string|null The tenant, or null is failure.
      */
-    public static function get_tenant_from_idtoken(\auth_oidc\jwt $idtoken) {
+    public static function get_tenant_from_idtoken(jwt $idtoken) {
         $iss = $idtoken->claim('iss');
         $parsediss = parse_url($iss);
         if (!empty($parsediss['path'])) {
@@ -155,9 +169,8 @@ class utils {
      *
      * @return bool Whether app-only access is active.
      */
-    public static function is_active_apponlyaccess() {
-        return (static::is_configured_apponlyaccess() === true && \local_o365\rest\unified::is_configured() === true) ?
-            true : false;
+    public static function is_active_apponlyaccess() : bool {
+        return static::is_configured_apponlyaccess() === true && unified::is_configured() === true;
     }
 
     /**
@@ -166,13 +179,13 @@ class utils {
      * @param array $userids The full array of userids.
      * @return array Array of userids that are o365 connected.
      */
-    public static function limit_to_o365_users($userids) {
+    public static function limit_to_o365_users(array $userids) {
         global $DB;
         if (empty($userids)) {
             return [];
         }
-        $aadresource = \local_o365\rest\azuread::get_tokenresource();
-        list($idsql, $idparams) = $DB->get_in_or_equal($userids);
+        $aadresource = unified::get_tokenresource();
+        [$idsql, $idparams] = $DB->get_in_or_equal($userids);
         $sql = 'SELECT u.id as userid
                   FROM {user} u
              LEFT JOIN {local_o365_token} localtok ON localtok.user_id = u.id
@@ -196,7 +209,7 @@ class utils {
      * @return string|null The UPN of the connected Microsoft 365 account, or null if none found.
      */
     public static function get_o365_upn($userid) {
-        $o365user = \local_o365\obj\o365user::instance_from_muserid($userid);
+        $o365user = o365user::instance_from_muserid($userid);
         return (!empty($o365user)) ? $o365user->upn : null;
     }
 
@@ -207,7 +220,7 @@ class utils {
      * @return null
      */
     public static function get_o365_userid($userid) {
-        $o365user = \local_o365\obj\o365user::instance_from_muserid($userid);
+        $o365user = o365user::instance_from_muserid($userid);
         return (!empty($o365user)) ? $o365user->objectid : null;
     }
 
@@ -218,8 +231,7 @@ class utils {
      * @return bool Whether they are connected (true) or not (false).
      */
     public static function is_o365_connected($userid) {
-        global $DB;
-        $o365user = \local_o365\obj\o365user::instance_from_muserid($userid);
+        $o365user = o365user::instance_from_muserid($userid);
         return (!empty($o365user)) ? true : false;
     }
 
@@ -238,7 +250,7 @@ class utils {
             }
         } else if (is_null($val)) {
             return '(null)';
-        } else if ($val instanceof \Exception) {
+        } else if ($val instanceof Exception) {
             $valinfo = [
                 'file' => $val->getFile(),
                 'line' => $val->getLine(),
@@ -268,7 +280,7 @@ class utils {
             $fullmessage = (!empty($where)) ? $where : 'Unknown function';
             $fullmessage .= ': '.$message;
             $fullmessage .= ' Data: '.static::tostring($debugdata);
-            $event = \local_o365\event\api_call_failed::create(['other' => $fullmessage]);
+            $event = api_call_failed::create(['other' => $fullmessage]);
             $event->trigger();
         }
     }
@@ -277,68 +289,63 @@ class utils {
      * Construct an API client.
      *
      * @param int|null $userid
-     * @param bool $forcelegacy
-     * @param string $caller
-     * @return \local_o365\rest\o365api|bool A constructed user API client (unified or legacy), or throw an error.
+     * @return unified A constructed unified API client, or throw an error.
      */
-    public static function get_api($userid = null, $forcelegacy = false, $caller = 'get_api') {
-        if ($forcelegacy) {
-            $unifiedconfigured = false;
-        } else {
-            $unifiedconfigured = \local_o365\rest\unified::is_configured();
-        }
-
-        if ($unifiedconfigured === true) {
-            $tokenresource = \local_o365\rest\unified::get_tokenresource();
-        } else {
-            $tokenresource = \local_o365\rest\azuread::get_tokenresource();
-        }
-
-        $clientdata = \local_o365\oauth2\clientdata::instance_from_oidc();
-        $httpclient = new \local_o365\httpclient();
+    public static function get_api(int $userid = null) {
+        $tokenresource = unified::get_tokenresource();
+        $clientdata = clientdata::instance_from_oidc();
+        $httpclient = new httpclient();
         if (!empty($userid)) {
-            $token = \local_o365\oauth2\token::instance($userid, $tokenresource, $clientdata, $httpclient);
+            $token = token::instance($userid, $tokenresource, $clientdata, $httpclient);
         } else {
             $token = static::get_app_or_system_token($tokenresource, $clientdata, $httpclient);
         }
         if (empty($token)) {
-            throw new \Exception('No token available for system user. Please run local_o365 health check.');
+            throw new Exception('No token available for system user. Please run local_o365 health check.');
         }
 
-        if ($unifiedconfigured === true) {
-            $apiclient = new \local_o365\rest\unified($token, $httpclient);
-        } else {
-            $apiclient = new \local_o365\rest\azuread($token, $httpclient);
-        }
+        $apiclient = new unified($token, $httpclient);
+
         return $apiclient;
     }
 
     /**
      * Enable an additional Microsoft 365 tenant.
      *
-     * @param string $tenant
+     * @param string $tenantid
+     * @param array $tenantdomainnames
      */
-    public static function enableadditionaltenant($tenant) {
-        $configuredtenants = get_config('local_o365', 'multitenants');
-        if (!empty($configuredtenants)) {
-            $configuredtenants = json_decode($configuredtenants, true);
-            if (!is_array($configuredtenants)) {
-                $configuredtenants = [];
-            }
-        }
-        $configuredtenants[] = $tenant;
-        $configuredtenants = array_unique($configuredtenants);
-        set_config('multitenants', json_encode($configuredtenants), 'local_o365');
+    public static function enableadditionaltenant(string $tenantid, array $tenantdomainnames) {
+        static::updatemultitenantssettings();
 
-        // Generate restrictions.
-        $newrestrictions = [];
-        $o365config = get_config('local_o365');
-        array_unshift($configuredtenants, $o365config->aadtenant);
-        foreach ($configuredtenants as $configuredtenant) {
-            $newrestriction = '@';
-            $newrestriction .= str_replace('.', '\.', $configuredtenant);
-            $newrestriction .= '$';
-            $newrestrictions[] = $newrestriction;
+        $multitenantsconfig = get_config('local_o365', 'multitenants');
+        $additionaltenants = json_decode($multitenantsconfig, true);
+        if (!is_array($additionaltenants)) {
+            $additionaltenants = [];
+        }
+
+        if (!array_key_exists($tenantid, $additionaltenants)) {
+            $additionaltenants[$tenantid] = $tenantdomainnames;
+        }
+        set_config('multitenants', json_encode($additionaltenants), 'local_o365');
+
+        // Cleanup legacy multi tenants configurations.
+        $configuredlegacytenants = get_config('local_o365', 'legacymultitenants');
+        if (!empty($configuredlegacytenants)) {
+            $configuredlegacytenants = json_decode($configuredlegacytenants, true);
+            if (is_array($configuredlegacytenants)) {
+                $configuredlegacytenants = array_diff($configuredlegacytenants, $tenantdomainnames);
+            }
+            set_config('legacymultitenants', json_encode($configuredlegacytenants), 'local_o365');
+        }
+
+        // Update restrictions.
+        $hostingtenant = get_config('local_o365', 'aadtenant');
+        $newrestrictions = ['@' . str_replace('.', '\.', $hostingtenant) . '$'];
+        foreach ($additionaltenants as $configuredtenantdomains) {
+            foreach ($configuredtenantdomains as $configuredtenantdomain) {
+                $newrestrictions[] = '@' . str_replace('.', '\.', $configuredtenantdomain) . '$';
+            }
         }
         $userrestrictions = get_config('auth_oidc', 'userrestrictions');
         $userrestrictions = explode("\n", $userrestrictions);
@@ -349,11 +356,58 @@ class utils {
     }
 
     /**
+     * Update multitenants configuration settings for the March 2022 upgrade.
+     *  - The old multitenants configuration contains a json encoded array of the initial domain names of each additional tenant,
+     * e.g. ["contoso.onmicrosoft.com"].
+     *  - The new multitenants configuration contains a json encoded array having tenant ID as key, and an array of verified domains
+     * as value. e.g. {"00000000-0000-0000-0000-000000000000":["contoso.onmicrosoft.com","contoso.com"]}.
+     *
+     * @return void
+     */
+    public static function updatemultitenantssettings() {
+        $multitenantsconfig = get_config('local_o365', 'multitenants');
+        $additionaltenantdomains = [];
+
+        $legacymultitenantsconfig = get_config('local_o365', 'legacymultitenants');
+        $legacyadditionaltenantdomains = json_decode($legacymultitenantsconfig, true);
+        if (!is_array($legacyadditionaltenantdomains)) {
+            $legacyadditionaltenantdomains = [];
+        }
+
+        if (!empty($multitenantsconfig)) {
+            $multitenantsconfig = json_decode($multitenantsconfig, true);
+            if (is_array($multitenantsconfig) && count($multitenantsconfig) != 0) {
+                if (array_keys($multitenantsconfig)[0] != '0') {
+                    // Configuration array keys are not numbers - already migrated.
+                    return true;
+                }
+                foreach ($multitenantsconfig as $currenttenantid => $currenttenantdomainnames) {
+                    if (is_int($currenttenantid) || strlen($currenttenantid) != 36) {
+                        // Not real tenant ID, this contains settings in old format.
+                        if (is_array($currenttenantdomainnames)) {
+                            $legacyadditionaltenantdomains = array_merge($legacyadditionaltenantdomains, $currenttenantdomainnames);
+                        } else {
+                            $legacyadditionaltenantdomains = array_merge($legacyadditionaltenantdomains,
+                                [$currenttenantdomainnames]);
+                        }
+                    } else {
+                        $additionaltenantdomains[$currenttenantid] = $currenttenantdomainnames;
+                    }
+                }
+                set_config('legacymultitenants', json_encode($legacyadditionaltenantdomains), 'local_o365');
+            }
+
+            set_config('multitenants', json_encode($additionaltenantdomains), 'local_o365');
+        }
+    }
+
+    /**
      * Disable an additional Microsoft 365 tenant.
      *
-     * @param string $tenant
+     * @param string $tenantid
+     * @return bool|void
      */
-    public static function disableadditionaltenant($tenant) {
+    public static function disableadditionaltenant(string $tenantid) {
         $o365config = get_config('local_o365');
         if (empty($o365config->multitenants)) {
             return true;
@@ -362,16 +416,42 @@ class utils {
         if (!is_array($configuredtenants)) {
             $configuredtenants = [];
         }
-        $configuredtenants = array_diff($configuredtenants, [$tenant]);
-        set_config('multitenants', json_encode($configuredtenants), 'local_o365');
+
+        $revokeddomains = [];
+        if (array_key_exists($tenantid, $configuredtenants)) {
+            $revokeddomains = $configuredtenants[$tenantid];
+            unset($configuredtenants[$tenantid]);
+            set_config('multitenants', json_encode($configuredtenants), 'local_o365');
+        }
 
         // Update restrictions.
         $userrestrictions = get_config('auth_oidc', 'userrestrictions');
         $userrestrictions = (!empty($userrestrictions)) ? explode("\n", $userrestrictions) : [];
-        $regex = '@'.str_replace('.', '\.', $tenant).'$';
-        $userrestrictions = array_diff($userrestrictions, [$regex]);
+        foreach ($revokeddomains as $revokeddomain) {
+            $regex = '@' . str_replace('.', '\.', $revokeddomain) . '$';
+            $userrestrictions = array_diff($userrestrictions, [$regex]);
+        }
         $userrestrictions = implode("\n", $userrestrictions);
         set_config('userrestrictions', $userrestrictions, 'auth_oidc');
+    }
+
+    /**
+     * Delete an additional tenant from the legacy additional tenant settings.
+     *
+     * @param $tenant
+     * @return bool|void
+     */
+    public static function deletelegacyadditionaltenant($tenant) {
+        $o365config = get_config('local_o365');
+        if (empty($o365config->legacymultitenants)) {
+            return true;
+        }
+        $configuredlegacytenants = json_decode($o365config->legacymultitenants, true);
+        if (!is_array($configuredlegacytenants)) {
+            $configuredlegacytenants = [];
+        }
+        $configuredlegacytenants = array_diff($configuredlegacytenants, [$tenant]);
+        set_config('legacymultitenants', json_encode($configuredlegacytenants), 'local_o365');
     }
 
     /**
@@ -380,21 +460,19 @@ class utils {
      * @param int $userid The ID of the user.
      * @return string The tenant for the user. Empty string unless different from the host tenant.
      */
-    public static function get_tenant_for_user($userid) {
+    public static function get_tenant_for_user(int $userid) : string {
         try {
-            $clientdata = \local_o365\oauth2\clientdata::instance_from_oidc();
-            $httpclient = new \local_o365\httpclient();
-            $tokenresource = (\local_o365\rest\unified::is_enabled() === true) ?
-                \local_o365\rest\unified::get_tokenresource() : \local_o365\rest\discovery::get_tokenresource();
-            $token = \local_o365\oauth2\token::instance($userid, $tokenresource, $clientdata, $httpclient);
+            $clientdata = clientdata::instance_from_oidc();
+            $httpclient = new httpclient();
+            $tokenresource = unified::get_tokenresource();
+            $token = token::instance($userid, $tokenresource, $clientdata, $httpclient);
             if (!empty($token)) {
-                $apiclient = (\local_o365\rest\unified::is_enabled() === true) ?
-                    new \local_o365\rest\unified($token, $httpclient) : new \local_o365\rest\discovery($token, $httpclient);
-                $tenant = $apiclient->get_tenant();
+                $apiclient = new unified($token, $httpclient);
+                $tenant = $apiclient->get_default_domain_name_in_tenant();
                 $tenant = clean_param($tenant, PARAM_TEXT);
                 return ($tenant != get_config('local_o365', 'aadtenant')) ? $tenant : '';
             }
-        } catch (\Exception $e) {
+        } catch (Exception $e) {
             // Do nothing.
         }
         return '';
@@ -408,22 +486,19 @@ class utils {
      */
     public static function get_odburl_for_user($userid) {
         try {
-            $clientdata = \local_o365\oauth2\clientdata::instance_from_oidc();
-            $httpclient = new \local_o365\httpclient();
-            $tokenresource = (\local_o365\rest\unified::is_enabled() === true) ?
-                \local_o365\rest\unified::get_tokenresource() : \local_o365\rest\discovery::get_tokenresource();
-            $token = \local_o365\oauth2\token::instance($userid, $tokenresource, $clientdata, $httpclient);
+            $clientdata = clientdata::instance_from_oidc();
+            $httpclient = new httpclient();
+            $tokenresource = unified::get_tokenresource();
+            $token = token::instance($userid, $tokenresource, $clientdata, $httpclient);
             if (!empty($token)) {
-                $apiclient = (\local_o365\rest\unified::is_enabled() === true) ?
-                    new \local_o365\rest\unified($token, $httpclient) : new \local_o365\rest\discovery($token, $httpclient);
+                $apiclient = new unified($token, $httpclient);
                 $tenant = $apiclient->get_odburl();
                 $tenant = clean_param($tenant, PARAM_TEXT);
                 return ($tenant != get_config('local_o365', 'odburl')) ? $tenant : '';
             }
-        } catch (\Exception $e) {
+        } catch (Exception $e) {
             // Do nothing.
         }
         return '';
     }
-
 }

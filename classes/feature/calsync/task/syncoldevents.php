@@ -25,6 +25,9 @@
 
 namespace local_o365\feature\calsync\task;
 
+use local_o365\utils;
+use moodle_exception;
+
 defined('MOODLE_INTERNAL') || die();
 
 /**
@@ -89,7 +92,7 @@ class syncoldevents extends \core\task\adhoc_task {
         $httpclient = new \local_o365\httpclient();
         $calsync = new \local_o365\feature\calsync\main($clientdata, $httpclient);
 
-        list($subscribersprimary, $subscribersnotprimary) = $this->get_subscribers('site');
+        [$subscribersprimary, $subscribersnotprimary] = $this->get_subscribers('site');
 
         $sql = 'SELECT ev.id AS eventid,
                        ev.name AS eventname,
@@ -97,7 +100,8 @@ class syncoldevents extends \core\task\adhoc_task {
                        ev.timestart AS eventtimestart,
                        ev.timeduration AS eventtimeduration,
                        idmap.outlookeventid,
-                       ev.userid AS eventuserid
+                       ev.userid AS eventuserid,
+                       idmap.id AS idmapid
                   FROM {event} ev
              LEFT JOIN {local_o365_calidmap} idmap ON ev.id = idmap.eventid AND idmap.userid = ev.userid
                  WHERE ev.courseid = ?';
@@ -117,8 +121,12 @@ class syncoldevents extends \core\task\adhoc_task {
                     try {
                         // If there's a stored outlookeventid we've already synced to o365 so update it. Otherwise create it.
                         if (!empty($event->outlookeventid)) {
-                            $calsync->update_event_raw($event->eventuserid, $event->outlookeventid,
-                                ['attendees' => $subscribersprimary]);
+                            try {
+                                $calsync->update_event_raw($event->eventuserid, $event->outlookeventid,
+                                    ['attendees' => $subscribersprimary]);
+                            } catch (moodle_exception $e) {
+                                // Do nothing.
+                            }
                         } else {
                             $calid = null;
                             if (!empty($subscribersprimary[$event->eventuserid])) {
@@ -205,7 +213,7 @@ class syncoldevents extends \core\task\adhoc_task {
         $httpclient = new \local_o365\httpclient();
         $calsync = new \local_o365\feature\calsync\main($clientdata, $httpclient);
 
-        list($subscribersprimary, $subscribersnotprimary) = $this->get_subscribers('course', $courseid);
+        [$subscribersprimary, $subscribersnotprimary] = $this->get_subscribers('course', $courseid);
 
         $sql = 'SELECT ev.id AS eventid,
                        ev.name AS eventname,
@@ -214,7 +222,8 @@ class syncoldevents extends \core\task\adhoc_task {
                        ev.timeduration AS eventtimeduration,
                        idmap.outlookeventid,
                        ev.userid AS eventuserid,
-                       ev.groupid
+                       ev.groupid,
+                       idmap.id AS idmapid
                   FROM {event} ev
              LEFT JOIN {local_o365_calidmap} idmap ON ev.id = idmap.eventid AND idmap.userid = ev.userid
                  WHERE ev.courseid = ? ';
@@ -251,8 +260,12 @@ class syncoldevents extends \core\task\adhoc_task {
 
                         // If there's a stored outlookeventid the event exists in o365, so update it. Otherwise create it.
                         if (!empty($event->outlookeventid)) {
-                            $calsync->update_event_raw($event->eventuserid, $event->outlookeventid,
-                                ['attendees' => $eventattendees]);
+                            try {
+                                $calsync->update_event_raw($event->eventuserid, $event->outlookeventid,
+                                    ['attendees' => $eventattendees]);
+                            } catch (moodle_exception $e) {
+                                // Do nothing.
+                            }
                         } else {
                             $calid = null;
                             if (!empty($subscribersprimary[$event->eventuserid])) {
@@ -353,7 +366,7 @@ class syncoldevents extends \core\task\adhoc_task {
         $usertoken = $calsync->get_user_token($userid);
         if (empty($usertoken)) {
             // No token, can't sync.
-            \local_o365\utils::debug('Could not get user token for calendar sync.', 'sync_userevents');
+            utils::debug('Could not get user token for calendar sync.', __METHOD__);
             return false;
         }
 
@@ -435,8 +448,8 @@ class syncoldevents extends \core\task\adhoc_task {
         $opdata = $this->get_custom_data();
         $timecreated = (isset($opdata->timecreated)) ? $opdata->timecreated : time();
 
-        if (\local_o365\utils::is_configured() !== true) {
-            \local_o365\utils::debug(get_string('erroracpauthoidcnotconfig', 'local_o365'), get_called_class());
+        if (utils::is_connected() !== true) {
+            utils::debug(get_string('erroracpauthoidcnotconfig', 'local_o365'), __METHOD__);
             return false;
         }
 

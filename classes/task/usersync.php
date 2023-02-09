@@ -84,7 +84,7 @@ class usersync extends scheduled_task {
      * Do the job.
      */
     public function execute() {
-        if (utils::is_configured() !== true) {
+        if (utils::is_connected() !== true) {
             $this->mtrace('Microsoft 365 not configured');
 
             return false;
@@ -102,6 +102,8 @@ class usersync extends scheduled_task {
 
         // Do not time out when syncing users.
         @set_time_limit(0);
+
+        $fullsyncfailed = false;
 
         if (main::sync_option_enabled('nodelta') === true) {
             $skiptoken = $this->get_token('skiptokenfull');
@@ -122,8 +124,9 @@ class usersync extends scheduled_task {
                     $continue = (!empty($skiptoken));
                 }
             } catch (\Exception $e) {
+                $fullsyncfailed = true;
                 $this->mtrace('Error in full usersync: ' . $e->getMessage());
-                utils::debug($e->getMessage(), 'usersync task', $e);
+                utils::debug($e->getMessage(), __METHOD__, $e);
                 $this->mtrace('Resetting skip and delta tokens.');
                 $skiptoken = null;
             }
@@ -163,7 +166,7 @@ class usersync extends scheduled_task {
                 }
             } catch (\Exception $e) {
                 $this->mtrace('Error in delta usersync: ' . $e->getMessage());
-                utils::debug($e->getMessage(), 'usersync task', $e);
+                utils::debug($e->getMessage(), __METHOD__, $e);
                 $this->mtrace('Resetting skip and delta tokens.');
                 $skiptoken = null;
                 $deltatoken = null;
@@ -196,17 +199,41 @@ class usersync extends scheduled_task {
         }
 
         if (main::sync_option_enabled('suspend') || main::sync_option_enabled('reenable')) {
-            $lastruntime = get_config('local_o365', 'task_usersync_lastdelete');
+            $lastrundate = get_config('local_o365', 'task_usersync_lastdelete');
             $rundelete = true;
-            if ($lastruntime === false) {
-                $lastruntime = strtotime('today midnight');
-                set_config('task_usersync_lastdelete', $lastruntime, 'local_o365');
-            } else {
-                if ($lastruntime + 24 * 60 * 60 > time()) {
-                    $rundelete = false;
-                    $this->mtrace('Suspend/delete users feature disabled because it was run less than 1 day ago.');
+            $alreadyruntoday = false;
+
+            if (strlen($lastrundate) == 10) {
+                $lastrundate = false;
+            }
+            if ($lastrundate && $lastrundate >= date('Ymd')) {
+                $alreadyruntoday = true;
+                $rundelete = false;
+            }
+            if (!$alreadyruntoday) {
+                $suspensiontaskhour = get_config('local_o365', 'usersync_suspension_h');
+                $suspensiontaskminute = get_config('local_o365', 'usersync_suspension_m');
+                if (!$suspensiontaskhour) {
+                    $suspensiontaskhour = 0;
+                }
+                if(!$suspensiontaskminute) {
+                    $suspensiontaskminute = 0;
+                }
+                $currenthour = date('H');
+                $currentminute = date('i');
+                if ($currenthour > $suspensiontaskhour) {
+                    set_config('task_usersync_lastdelete', date('Ymd'), 'local_o365');
+                } else if (($currenthour == $suspensiontaskhour) && ($currentminute >= $suspensiontaskminute)) {
+                    set_config('task_usersync_lastdelete', date('Ymd'), 'local_o365');
                 } else {
-                    set_config('task_usersync_lastdelete', time(), 'local_o365');
+                    $rundelete = false;
+                }
+            }
+
+            if ($lastrundate != false) {
+                if (date('Ymd') <= $lastrundate) {
+                    $rundelete = false;
+                    $this->mtrace('Suspend/delete users feature skipped because it was run less than 1 day ago.');
                 }
             }
             if ($rundelete) {
@@ -224,20 +251,25 @@ class usersync extends scheduled_task {
                             $continue = (!empty($skiptoken));
                         }
                     } catch (\Exception $e) {
+                        $fullsyncfailed = true;
                         $this->mtrace('Error in full usersync: ' . $e->getMessage());
-                        utils::debug($e->getMessage(), 'usersync task', $e);
+                        utils::debug($e->getMessage(), __METHOD__, $e);
                         $this->mtrace('Resetting skip and delta tokens.');
                         $skiptoken = null;
                     }
                 }
 
-                if (main::sync_option_enabled('suspend')) {
-                    $this->mtrace('Suspending deleted users...');
-                    $usersync->suspend_users($users, main::sync_option_enabled('delete'));
-                }
-                if (main::sync_option_enabled('reenable')) {
-                    $this->mtrace('Re-enabling suspended users...');
-                    $usersync->reenable_suspsend_users($users, main::sync_option_enabled('disabledsync'));
+                if ($fullsyncfailed) {
+                    $this->mtrace('Full user sync failed, skip suspending users...');
+                } else {
+                    if (main::sync_option_enabled('suspend')) {
+                        $this->mtrace('Suspending deleted users...');
+                        $usersync->suspend_users($users, main::sync_option_enabled('delete'));
+                    }
+                    if (main::sync_option_enabled('reenable')) {
+                        $this->mtrace('Re-enabling suspended users...');
+                        $usersync->reenable_suspsend_users($users, main::sync_option_enabled('disabledsync'));
+                    }
                 }
             }
         }

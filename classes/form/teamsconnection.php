@@ -15,7 +15,11 @@
 // along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
 
 /**
+<<<<<<<< HEAD:classes/tests/mocksharepoint.php
+ * A mock sharepoint API class.
+========
  * Single team connection form.
+>>>>>>>> MOODLE_41_STABLE:classes/form/teamsconnection.php
  *
  * @package local_o365
  * @author Lai Wei <lai.wei@enovation.ie>
@@ -31,8 +35,16 @@ global $CFG;
 
 require_once($CFG->dirroot.'/lib/formslib.php');
 
+defined('MOODLE_INTERNAL') || die();
+
 /**
+<<<<<<<< HEAD:classes/tests/mocksharepoint.php
+ * A mock sharepoint API class.
+ *
+ * @codeCoverageIgnore
+========
  * Single Teams connection form.
+>>>>>>>> MOODLE_41_STABLE:classes/form/teamsconnection.php
  */
 class teamsconnection extends \moodleform {
     /**

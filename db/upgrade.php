@@ -24,6 +24,8 @@
  * @copyright (C) 2014 onwards Microsoft, Inc. (http://microsoft.com/)
  */
 
+use local_o365\utils;
+
 defined('MOODLE_INTERNAL') || die();
 
 require_once($CFG->dirroot . '/local/o365/lib.php');
@@ -746,6 +748,176 @@ function xmldb_local_o365_upgrade($oldversion) {
 
         // O365 savepoint reached.
         upgrade_plugin_savepoint(true, 2020071507, 'local', 'o365');
+    }
+
+    if ($oldversion < 2021051712) {
+        // Update multi tenants setting.
+        utils::updatemultitenantssettings();
+
+        // O365 savepoint reached.
+        upgrade_plugin_savepoint(true, 2021051712, 'local', 'o365');
+    }
+
+    if ($oldversion < 2021051713) {
+        // Update "task_usersync_lastdelete" setting from timestamp to YYYYMMDD.
+        set_config('task_usersync_lastdelete', date('Ymd', strtotime('yesterday')), 'local_o365');
+
+        // O365 savepoint reached.
+        upgrade_plugin_savepoint(true, 2021051713, 'local', 'o365');
+    }
+
+    if ($oldversion < 2021051714) {
+        // Clean up SDS sync records.
+        local_o365\feature\sds\task\sync::clean_up_sds_sync_records();
+
+        // O365 savepoint reached.
+        upgrade_plugin_savepoint(true, 2021051714, 'local', 'o365');
+    }
+
+    if ($oldversion < 2021051715) {
+        // Remove duplicate entries for users in local_o365_objects.
+        $sql = "SELECT DISTINCT(a.id)
+                  FROM {local_o365_objects} a
+                  JOIN {local_o365_objects} b ON b.moodleid = a.moodleid AND a.o365name = b.o365name AND a.objectid = b.objectid
+                 WHERE a.type = :user1
+                   AND b.type = :user2
+                   AND a.id > b.id";
+        $duplicateentries = $DB->get_fieldset_sql($sql, ['user1' => 'user', 'user2' => 'user']);
+
+        if ($duplicateentries) {
+            $DB->delete_records_list('local_o365_objects', 'id', $duplicateentries);
+        }
+
+        // O365 savepoint reached.
+        upgrade_plugin_savepoint(true, 2021051715, 'local', 'o365');
+    }
+
+    if ($oldversion < 2021051717) {
+        // Reset last calendar sync run task.
+        set_config('calsyncinlastrun', 0, 'local_o365');
+
+        // O365 savepoint reached.
+        upgrade_plugin_savepoint(true, 2021051717, 'local', 'o365');
+    }
+
+    if ($oldversion < 2021051718) {
+        $pluginsettings = get_config('local_o365');
+
+        // Delete local_o365_coursegroupdata / local_o365_groupdata table.
+        $table = new xmldb_table('local_o365_coursegroupdata');
+        if ($dbman->table_exists($table)) {
+            $dbman->drop_table($table);
+        }
+        $table = new xmldb_table('local_o365_groupdata');
+        if ($dbman->table_exists($table)) {
+            $dbman->drop_table($table);
+        }
+
+        // Rename "createteams" to "coursesync".
+        if (isset($pluginsettings->createteams)) {
+            if (!isset($pluginsettings->coursesync)) {
+                set_config('coursesync', $pluginsettings->createteams, 'local_o365');
+            }
+            unset_config('createteams', 'local_o365');
+        }
+
+        // Rename "usergroupcustom" to "coursesynccustom".
+        if (isset($pluginsettings->usergroupcustom)) {
+            if (!isset($pluginsettings->coursesynccustom)) {
+                set_config('coursesynccustom', $pluginsettings->usergroupcustom, 'local_o365');
+            }
+            unset_config('usergroupcustom', 'local_o365');
+        }
+
+        // Temporarily rename "usergroupcustomfeatures" to "coursesynccustomfeatures" - to be deleted.
+        if (isset($pluginsettings->usergroupcustomfeatures)) {
+            if (!isset($pluginsettings->coursesynccustomfeatures)) {
+                set_config('coursesynccustomfeatures', $pluginsettings->usergroupcustomfeatures, 'local_o365');
+            }
+            unset_config('usergroupcustomfeatures', 'local_o365');
+        }
+
+        // Rename "createteams_per_course" to "course_sync_per_course".
+        if (isset($pluginsettings->createteams_per_course)) {
+            if (!isset($pluginsettings->course_sync_per_course)) {
+                set_config('course_sync_per_course', $pluginsettings->createteams_per_course, 'local_o365');
+            }
+            unset_config('createteams_per_course', 'local_o365');
+        }
+
+        // Delete setting "coursesynccustomfeatures".
+        if (isset($pluginsettings->coursesynccustomfeatures)) {
+            unset_config('coursesynccustomfeatures', 'local_o365');
+        }
+
+        // Delete setting "group_creation_fallback".
+        if (isset($pluginsettings->group_creation_fallback)) {
+            unset_config('group_creation_fallback', 'local_o365');
+        }
+
+        // Delete setting "prefer_class_team".
+        if (isset($pluginsettings->prefer_class_team)) {
+            unset_config('prefer_class_team', 'local_o365');
+        }
+
+        // If the tenant has education license, stamp with class details.
+        if (!isset($pluginsettings->education_group_params_set)) {
+            set_config('education_group_params_set', time(), 'local_o365');
+            local_o365\feature\coursesync\utils::migrate_existing_groups();
+        }
+
+        // Define field locked to be added to local_o365_teams_cache.
+        $table = new xmldb_table('local_o365_teams_cache');
+        $field = new xmldb_field('locked', XMLDB_TYPE_INTEGER, '1', null, null, null, null, 'url');
+
+        // Conditionally launch add field locked.
+        if (!$dbman->field_exists($table, $field)) {
+            $dbman->add_field($table, $field);
+        }
+
+        // O365 savepoint reached.
+        upgrade_plugin_savepoint(true, 2021051718, 'local', 'o365');
+    }
+
+    if ($oldversion < 2022041901) {
+        // Set default user sync suspension feature schedule.
+        local_o365_set_default_user_sync_suspension_feature_schedule();
+
+        // O365 savepoint reached.
+        upgrade_plugin_savepoint(true, 2022041901, 'local', 'o365');
+    }
+
+    if ($oldversion < 2022041906) {
+        // Remove SharePoint feature and settings.
+        unset_config('sharepointlink', 'local_o365');
+        unset_config('sharepointcourseselect', 'local_o365');
+
+        // Define table local_o365_spgroupdata to be dropped.
+        $table = new xmldb_table('local_o365_spgroupdata');
+
+        // Conditionally launch drop table for local_o365_spgroupdata.
+        if ($dbman->table_exists($table)) {
+            $dbman->drop_table($table);
+        }
+
+        // Define table local_o365_spgroupassign to be dropped.
+        $table = new xmldb_table('local_o365_spgroupassign');
+
+        // Conditionally launch drop table for local_o365_spgroupassign.
+        if ($dbman->table_exists($table)) {
+            $dbman->drop_table($table);
+        }
+
+        // Define table local_o365_coursespsite to be dropped.
+        $table = new xmldb_table('local_o365_coursespsite');
+
+        // Conditionally launch drop table for local_o365_coursespsite.
+        if ($dbman->table_exists($table)) {
+            $dbman->drop_table($table);
+        }
+
+        // O365 savepoint reached.
+        upgrade_plugin_savepoint(true, 2022041906, 'local', 'o365');
     }
 
     return true;

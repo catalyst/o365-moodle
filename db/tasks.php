@@ -45,7 +45,7 @@ $tasks = [
         'month' => '*'
     ],
     [
-        'classname' => 'local_o365\task\groupcreate',
+        'classname' => 'local_o365\task\coursesync',
         'blocking' => 0,
         'minute' => '*',
         'hour' => '*',
@@ -88,5 +88,14 @@ $tasks = [
         'day' => '*',
         'dayofweek' => '*',
         'month' => '*'
+    ],
+    [
+        'classname' => 'local_o365\task\notifysecretexpiry',
+        'blocking' => 0,
+        'minute' => 0,
+        'hour' => '3',
+        'day' => '*',
+        'dayofweek' => '*',
+        'month' => '*',
     ],
 ];
