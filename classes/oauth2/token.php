@@ -232,11 +232,7 @@ class token {
                 'tokenresult' => $tokenresult,
                 'resource' => $newtokenresource,
             ];
-<<<<<<< HEAD
-            \local_o365\utils::debug($errmsg, 'local_o365\oauth2\token::jump_tokenresource', $debuginfo);
-=======
             \local_o365\utils::debug($errmsg, __METHOD__, $debuginfo);
->>>>>>> MOODLE_41_STABLE
         }
     }
 
