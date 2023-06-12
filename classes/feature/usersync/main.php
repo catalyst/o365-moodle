@@ -529,9 +529,12 @@ class main {
         if (unified::is_configured() && (array_key_exists('id', $aaddata) && $aaddata['id'])) {
             $objectidfieldname = 'id';
             $userobjectid = $aaddata['id'];
-        } else {
+        } else if (array_key_exists('objectId', $aaddata) && $aaddata['objectId']) {
             $objectidfieldname = 'objectId';
             $userobjectid = $aaddata['objectId'];
+        } else {
+            $objectidfieldname = 'userPrincipalName';
+            $userobjectid = $aaddata['userPrincipalName'];
         }
 
         $usersync = new self();
@@ -613,7 +616,7 @@ class main {
                 $originallangsetting = $CFG->lang;
             }
 
-            if (!$user->lang) {
+            if (!isset($user->lang) || !$user->lang) {
                 // If the user's new language setting is empty, use original setting.
                 $user->lang = $originallangsetting;
             } else {
