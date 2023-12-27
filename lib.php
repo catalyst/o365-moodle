@@ -451,12 +451,9 @@ function local_o365_set_default_user_sync_suspension_feature_schedule() {
 function local_o365_get_duplicate_emails() {
     global $DB;
 
-    $sql = 'SELECT LOWER(u.email)
-              FROM {user} u
-              WHERE u.deleted = 0
-              AND u.suspended = 0
-             GROUP BY LOWER(u.email)
-             HAVING COUNT(u.username) > 1';
+    $sql = 'SELECT LOWER(email) FROM {user}
+        WHERE deleted = 0 and suspended = 0
+        GROUP BY LOWER(email) HAVING COUNT(*) > 1';
 
     $records = $DB->get_records_sql($sql);
     return array_keys($records);
