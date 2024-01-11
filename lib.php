@@ -480,10 +480,10 @@ function auth_oidc_display_auth_lock_options($settings, $auth, $userfields, $hel
             // Mapping.
             if ($field == 'email') {
                 $settings->add(new admin_setting_configselect("auth_oidc/field_map_{$field}",
-                    get_string('auth_fieldmapping', 'auth', $fieldname), '', null, $emailremotefields));
+                    get_string('auth_fieldmapping', 'auth', $fieldname), '', 'mail', $emailremotefields));
             } else {
                 $settings->add(new admin_setting_configselect("auth_oidc/field_map_{$field}",
-                    get_string('auth_fieldmapping', 'auth', $fieldname), '', null, $remotefields));
+                    get_string('auth_fieldmapping', 'auth', $fieldname), '', '', $remotefields));
             }
 
             // Update local.
